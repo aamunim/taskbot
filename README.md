@@ -23,51 +23,39 @@ Telegram গ্রুপ → webhook → Supabase Edge Function
 | `supabase/functions/setup/` | একবারের সেটআপ: webhook ও cron সংযোগ |
 | `app/` | Expo (React Native) অ্যাপ |
 
-## চালু করার ধাপ
+## চালু করার ধাপ (শুধু GitHub দিয়ে)
 
-আগে থেকে লাগবে: Node.js, আর Supabase CLI (`npm i -g supabase`)।
+কম্পিউটারে কিছু ইনস্টল করতে হবে না।
 
-### ১. ব্যাকএন্ড
+### ১. Secrets বসান
 
-```bash
-supabase login
-supabase link --project-ref <আপনার-project-ref>
-supabase db push
+GitHub-এ রিপোর **Settings → Secrets and variables → Actions → New repository secret** থেকে এগুলো যোগ করুন:
 
-cp supabase/functions/.env.example supabase/functions/.env
-# .env ফাইলে চারটি মান বসান: TELEGRAM_BOT_TOKEN, ANTHROPIC_API_KEY,
-# ELEVENLABS_API_KEY, ADMIN_SECRET (openssl rand -hex 32 দিয়ে তৈরি করুন)
-supabase secrets set --env-file supabase/functions/.env
+| নাম | কোথায় পাবেন |
+|---|---|
+| `SUPABASE_ACCESS_TOKEN` | supabase.com → Account → Access Tokens |
+| `SUPABASE_PROJECT_REF` | প্রজেক্ট URL-এর `https://` আর `.supabase.co`-র মাঝের অংশ |
+| `SUPABASE_DB_PASSWORD` | প্রজেক্ট তৈরির সময় দেওয়া ডেটাবেস পাসওয়ার্ড |
+| `SUPABASE_ANON_KEY` | Project Settings → API → anon public |
+| `TELEGRAM_BOT_TOKEN` | BotFather |
+| `ANTHROPIC_API_KEY` | Claude Console |
+| `ELEVENLABS_API_KEY` | ElevenLabs |
+| `ADMIN_SECRET` | নিজে বানানো যেকোনো লম্বা এলোমেলো লেখা (৩০+ অক্ষর) |
 
-supabase functions deploy
-```
+### ২. ব্যাকএন্ড ডিপ্লয়
 
-এরপর একবার সেটআপ চালান:
+**Actions → Deploy backend → Run workflow**। শেষ ধাপের আউটপুটে `"can_read_all_group_messages": true` থাকতে হবে। `false` এলে BotFather-এ Privacy Mode বন্ধ করে বটকে গ্রুপ থেকে সরিয়ে আবার যোগ করুন।
 
-```bash
-curl -X POST https://<project-ref>.supabase.co/functions/v1/setup \
-  -H "x-admin-secret: <আপনার ADMIN_SECRET>"
-```
+### ৩. অ্যাপ
 
-উত্তরে `"can_read_all_group_messages": true` থাকতে হবে। `false` এলে BotFather-এ Privacy Mode বন্ধ করে বটকে গ্রুপ থেকে সরিয়ে আবার যোগ করুন।
+**Actions → Build Android APK → Run workflow**। শেষ হলে ওই রানের পাতার নিচে **Artifacts** থেকে `taskbot-apk` নামিয়ে ফোনে ইনস্টল করুন।
 
-### ২. অ্যাপ
-
-```bash
-cd app
-cp .env.example .env   # Supabase URL ও anon key বসান
-npm install
-npx eas-cli login      # বিনামূল্যের Expo অ্যাকাউন্ট লাগবে
-npx eas-cli init
-npx eas-cli build -p android --profile preview
-```
-
-বিল্ড শেষে যে লিংক আসবে সেখান থেকে APK নামিয়ে ফোনে ইনস্টল করুন। অ্যাপে তারিখ বাছাই ও অডিও প্লেয়ারের মতো নেটিভ মডিউল আছে, তাই Expo Go দিয়ে চলার নিশ্চয়তা নেই।
-
-### ৩. প্রথমবার ব্যবহার
+### ৪. প্রথমবার ব্যবহার
 
 1. অ্যাপে "Telegram দিয়ে লগইন" চাপুন, Telegram-এ বটের **Start** চাপুন, অ্যাপে ফিরুন। প্রথম যিনি লগইন করবেন তিনিই মালিক; পরে অন্য কেউ ঢুকতে পারবে না।
 2. গ্রুপে নিজে যেকোনো একটি মেসেজ পাঠান। এতে বট গ্রুপটিকে আপনার বলে চিনে নেয় এবং তখন থেকে বিশ্লেষণ শুরু হয় (এর আগের মেসেজও সংরক্ষিত থাকে এবং তখন বিশ্লেষিত হয়)।
+
+কম্পিউটার থেকে হাতে চালাতে চাইলে workflow ফাইল দুটির (`.github/workflows/`) কমান্ডগুলোই অনুসরণ করুন।
 
 ## যেভাবে কাজ করে
 
