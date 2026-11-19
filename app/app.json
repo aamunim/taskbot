@@ -1,0 +1,23 @@
+{
+  "expo": {
+    "name": "TaskBot",
+    "slug": "taskbot",
+    "scheme": "taskbot",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "android": {
+      "package": "com.taskbot.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": ["expo-router", ["expo-audio", { "recordAudioAndroid": false, "enableBackgroundPlayback": false }]],
+    "experiments": { "typedRoutes": false }
+  }
+}

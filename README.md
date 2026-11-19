@@ -57,10 +57,12 @@ curl -X POST https://<project-ref>.supabase.co/functions/v1/setup \
 cd app
 cp .env.example .env   # Supabase URL ও anon key বসান
 npm install
-npx expo start         # Expo Go দিয়ে পরীক্ষা
+npx eas-cli login      # বিনামূল্যের Expo অ্যাকাউন্ট লাগবে
+npx eas-cli init
+npx eas-cli build -p android --profile preview
 ```
 
-APK বানাতে: `npx eas-cli build -p android --profile preview`
+বিল্ড শেষে যে লিংক আসবে সেখান থেকে APK নামিয়ে ফোনে ইনস্টল করুন। অ্যাপে তারিখ বাছাই ও অডিও প্লেয়ারের মতো নেটিভ মডিউল আছে, তাই Expo Go দিয়ে চলার নিশ্চয়তা নেই।
 
 ### ৩. প্রথমবার ব্যবহার
 
