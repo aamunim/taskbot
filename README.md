@@ -50,6 +50,12 @@ GitHub-এ রিপোর **Settings → Secrets and variables → Actions → 
 
 **Actions → Build Android APK → Run workflow**। শেষ হলে ওই রানের পাতার নিচে **Artifacts** থেকে `taskbot-apk` নামিয়ে ফোনে ইনস্টল করুন।
 
+### অ্যাপ আপডেট পাঠানো (EAS Update)
+
+অ্যাপের কোড বদলালে নতুন APK লাগে না: **Actions → Publish app update → Run workflow** চালালে ইনস্টল করা অ্যাপ পরেরবার খোলার সময় নতুন সংস্করণ নামিয়ে নেয়, তার পরেরবার খুললে সেটা চালু হয়। এর জন্য `EXPO_TOKEN` secret লাগে (expo.dev → Account Settings → Access Tokens)।
+
+নতুন নেটিভ মডিউল যোগ হলে `app.json`-এর `version` বাড়িয়ে নতুন APK বানাতে হবে; আপডেট শুধু একই `version`-এর APK-তে পৌঁছায়।
+
 ### ৪. প্রথমবার ব্যবহার
 
 1. অ্যাপে "Telegram দিয়ে লগইন" চাপুন, Telegram-এ বটের **Start** চাপুন, অ্যাপে ফিরুন। প্রথম যিনি লগইন করবেন তিনিই মালিক; পরে অন্য কেউ ঢুকতে পারবে না।

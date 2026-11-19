@@ -17,7 +17,33 @@
       },
       "predictiveBackGestureEnabled": false
     },
-    "plugins": ["expo-router", ["expo-audio", { "recordAudioAndroid": false, "enableBackgroundPlayback": false }]],
-    "experiments": { "typedRoutes": false }
+    "plugins": [
+      "expo-router",
+      [
+        "expo-audio",
+        {
+          "recordAudioAndroid": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": false
+    },
+    "owner": "aamunim",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/6d9d9f7f-dcd2-4b2a-bbd2-f5b69b6fd3fa",
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "6d9d9f7f-dcd2-4b2a-bbd2-f5b69b6fd3fa"
+      }
+    }
   }
 }
