@@ -119,6 +119,7 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
   const { data: cfg } = await supabase.from("app_config").select("*").eq("id", 1).single();
   const timeZone: string = cfg?.timezone ?? "Asia/Dhaka";
   const ownerTgId: number | null = cfg?.owner_tg_id ?? null;
+  const bossTgId: number | null = cfg?.boss_tg_id ?? null;
 
   const { data: linked } = await supabase.from("item_messages").select("item_id, message_id").in("message_id", ids);
   const linkedIds = [...new Set((linked ?? []).map((l) => l.item_id as string))];
@@ -146,7 +147,7 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
     .order("tg_message_id", { ascending: false }).limit(15);
 
   const who = (m: { sender_tg_id: number | null; sender_name: string | null }) =>
-    `${m.sender_name ?? "Unknown"}${ownerTgId && m.sender_tg_id === ownerTgId ? " (owner)" : ""}`;
+    `${m.sender_name ?? "Unknown"}${roleLabel(m.sender_tg_id, ownerTgId, bossTgId)}`;
   const body = (m: { text: string | null; transcript: string | null; kind: string }) =>
     [m.text, m.transcript ? `(voice transcript) ${m.transcript}` : null].filter(Boolean).join(" ") || `(${m.kind})`;
 
@@ -231,6 +232,8 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
         needs_review: review,
         chat_id: chatId,
         source_message_id: source.id,
+        source_sender_tg_id: source.sender_tg_id,
+        source_sender_name: source.sender_name,
       };
       const { data: ins, error: insErr } = await supabase.from("items").insert(row).select("id").single();
       if (insErr) throw insErr;
@@ -255,6 +258,14 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
     await sendMessage(ownerTgId, `<b>নতুন যোগ হয়েছে</b>\n${lines.join("\n")}`)
       .catch((e) => console.error("notify failed", e));
   }
+}
+
+/** Tells the model who is speaking. With no boss chosen yet, everyone else counts as the boss. */
+function roleLabel(sender: number | null, owner: number | null, boss: number | null): string {
+  if (sender === null || owner === null) return "";
+  if (sender === owner) return " (owner)";
+  if (boss === null || sender === boss) return " (boss)";
+  return " (colleague)";
 }
 
 function validDate(s: string | null): string | null {

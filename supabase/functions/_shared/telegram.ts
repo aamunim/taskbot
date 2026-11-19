@@ -44,6 +44,7 @@ export function messageLink(chatId: number, tgMessageId: number): string | null 
 export interface TgUser { id: number; is_bot?: boolean; first_name?: string; last_name?: string; username?: string }
 export interface TgChat { id: number; type: string; title?: string }
 interface TgFileBase { file_id: string; file_unique_id: string; file_size?: number; mime_type?: string; file_name?: string; duration?: number }
+export interface TgEntity { type: string; offset: number; length: number; url?: string }
 export interface TgMessage {
   message_id: number;
   date: number;
@@ -52,6 +53,8 @@ export interface TgMessage {
   from?: TgUser;
   text?: string;
   caption?: string;
+  entities?: TgEntity[];
+  caption_entities?: TgEntity[];
   reply_to_message?: { message_id: number };
   migrate_from_chat_id?: number;
   voice?: TgFileBase;
@@ -114,4 +117,28 @@ export function messageKind(m: TgMessage, files: ExtractedFile[]): string {
   if (files.length) return files[0].kind;
   if (typeof m.text === "string") return "text";
   return "service";
+}
+
+export function domainOf(url: string): string | null {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "") || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Web links in a message: plain URLs and links hidden behind text. */
+export function extractLinks(m: TgMessage): { url: string; domain: string | null }[] {
+  const text = m.text ?? m.caption ?? "";
+  const urls = new Set<string>();
+  for (const e of m.entities ?? m.caption_entities ?? []) {
+    // Telegram offsets are UTF-16 code units, the same unit JS strings use.
+    if (e.type === "text_link" && e.url) urls.add(e.url);
+    if (e.type === "url") {
+      const raw = text.slice(e.offset, e.offset + e.length);
+      urls.add(/^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `https://${raw}`);
+    }
+  }
+  for (const match of text.matchAll(/https?:\/\/[^\s<>"]+/g)) urls.add(match[0]);
+  return [...urls].filter((u) => /^https?:\/\//i.test(u)).map((url) => ({ url, domain: domainOf(url) }));
 }

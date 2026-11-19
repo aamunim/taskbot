@@ -1,6 +1,6 @@
 import { processChat } from "../_shared/pipeline.ts";
 import {
-  displayName, extractFiles, messageKind, sendMessage, type TgMessage, type TgUpdate,
+  displayName, extractFiles, extractLinks, messageKind, sendMessage, type TgMessage, type TgUpdate,
 } from "../_shared/telegram.ts";
 import { db, json, optionalEnv, recordError, timingSafeEqual, webhookSecret } from "../_shared/util.ts";
 
@@ -133,6 +133,22 @@ async function saveGroupMessage(m: TgMessage, edited: boolean): Promise<number |
       { onConflict: "message_id,tg_file_unique_id", ignoreDuplicates: true },
     );
     if (fileErr) throw fileErr;
+  }
+  const links = extractLinks(m);
+  if (links.length) {
+    const { error: linkErr } = await supabase.from("links").upsert(
+      links.map((l) => ({ ...l, message_id: saved.id })),
+      { onConflict: "message_id,url", ignoreDuplicates: true },
+    );
+    if (linkErr) throw linkErr;
+  }
+
+  // Until the owner chooses otherwise in the app, the first other person
+  // seen in the owner's group is taken to be the boss.
+  if (approved && analysable && owner !== null && m.from && m.from.id !== owner) {
+    await supabase.from("app_config")
+      .update({ boss_tg_id: m.from.id, boss_name: displayName(m.from) })
+      .eq("id", 1).is("boss_tg_id", null);
   }
   return status === "pending" ? m.chat.id : null;
 }
