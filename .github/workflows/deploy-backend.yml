@@ -39,17 +39,17 @@ jobs:
 
       - name: Set function secrets
         run: |
-          supabase secrets set --project-ref "$PROJECT_REF" \
+          supabase secrets set --yes --project-ref "$PROJECT_REF" \
             TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
             ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
             ELEVENLABS_API_KEY="$ELEVENLABS_API_KEY" \
             ADMIN_SECRET="$ADMIN_SECRET"
           if [ -n "$OWNER_TELEGRAM_ID" ]; then
-            supabase secrets set --project-ref "$PROJECT_REF" OWNER_TELEGRAM_ID="$OWNER_TELEGRAM_ID"
+            supabase secrets set --yes --project-ref "$PROJECT_REF" OWNER_TELEGRAM_ID="$OWNER_TELEGRAM_ID"
           fi
 
       - name: Deploy functions
-        run: supabase functions deploy --project-ref "$PROJECT_REF"
+        run: supabase functions deploy --yes --project-ref "$PROJECT_REF"
 
       - name: Register Telegram webhook and cron
         run: |
