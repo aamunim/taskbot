@@ -1,89 +1,181 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import type { ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import {
-  ActivityIndicator,
+  Animated,
+  Modal,
+  Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   View,
   type StyleProp,
   type TextProps,
+  type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { STATUS_LABEL, PRIORITY_LABEL, dueLabel, isOverdue } from '@/lib/format';
-import { useTheme } from '@/lib/theme';
-import type { Item, Status } from '@/lib/types';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ROLE_LABEL, roleColors } from '@/lib/roles';
+import { content, elevation, radius, space, ui, useTheme } from '@/lib/theme';
+import type { Role, RoleFilter } from '@/lib/types';
 
-export function Txt({ style, sub, bold, size = 15, color, ...rest }: TextProps & { sub?: boolean; bold?: boolean; size?: number; color?: string }) {
+export type IconName = keyof typeof Ionicons.glyphMap;
+
+// ------------------------------------------------------------------ text
+
+const VARIANTS = {
+  display: { size: 28, line: 34, font: ui.extrabold },
+  title: { size: 22, line: 28, font: ui.bold },
+  heading: { size: 17, line: 24, font: ui.bold },
+  body: { size: 15, line: 22, font: ui.medium },
+  label: { size: 13, line: 18, font: ui.semibold },
+  caption: { size: 12, line: 16, font: ui.medium },
+  overline: { size: 11, line: 14, font: ui.bold },
+} as const;
+const CONTENT_FONT = { display: content.semibold, title: content.semibold, heading: content.semibold, body: content.regular, label: content.medium, caption: content.regular, overline: content.semibold };
+
+type TxtProps = TextProps & {
+  variant?: keyof typeof VARIANTS;
+  /** Text written by people (titles, messages, names): uses the Bengali-capable face. */
+  content?: boolean;
+  sub?: boolean;
+  color?: string;
+  strong?: boolean;
+};
+
+export function Txt({ style, variant = 'body', content: isContent, sub, color, strong, ...rest }: TxtProps) {
   const t = useTheme();
-  return (
-    <Text
-      {...rest}
-      style={[{ color: color ?? (sub ? t.sub : t.text), fontSize: size, lineHeight: Math.round(size * 1.5), fontWeight: bold ? '600' : '400' }, style]}
-    />
-  );
+  const v = VARIANTS[variant];
+  // Hind Siliguri sets smaller and needs more leading than the Latin face.
+  const base: TextStyle = isContent
+    ? { fontFamily: strong ? content.semibold : CONTENT_FONT[variant], fontSize: v.size + 1, lineHeight: Math.round((v.size + 1) * 1.5) }
+    : { fontFamily: strong ? ui.bold : v.font, fontSize: v.size, lineHeight: v.line };
+  const overline: TextStyle = variant === 'overline' ? { textTransform: 'uppercase', letterSpacing: 0.9 } : {};
+  return <Text {...rest} style={[base, overline, { color: color ?? (sub ? t.sub : t.text) }, style]} />;
 }
 
-export function Card({ children, style, onPress }: { children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void }) {
+// ------------------------------------------------------------------ surfaces
+
+export function Card({ children, style, onPress, onLongPress, flat }: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  onPress?: () => void;
+  onLongPress?: () => void;
+  flat?: boolean;
+}) {
   const t = useTheme();
-  const base = [styles.card, { backgroundColor: t.card, borderColor: t.border }, style];
+  const base: StyleProp<ViewStyle> = [styles.card, { backgroundColor: t.surface, borderColor: t.border }, !flat && elevation(t), style];
   if (!onPress) return <View style={base}>{children}</View>;
   return (
-    <Pressable onPress={onPress} android_ripple={{ color: t.chip }} style={base}>
+    <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [base, pressed && styles.pressed]}>
       {children}
     </Pressable>
   );
 }
 
-export function Btn({ label, onPress, kind = 'primary', disabled, small, icon }: {
+// ------------------------------------------------------------------ buttons
+
+export function Btn({ label, onPress, kind = 'primary', disabled, small, icon, style }: {
   label: string;
   onPress: () => void;
-  kind?: 'primary' | 'plain' | 'danger';
+  kind?: 'primary' | 'soft' | 'ghost' | 'danger' | 'inverse';
   disabled?: boolean;
   small?: boolean;
-  icon?: keyof typeof Ionicons.glyphMap;
+  icon?: IconName;
+  style?: StyleProp<ViewStyle>;
 }) {
   const t = useTheme();
-  const bg = kind === 'primary' ? t.primary : kind === 'danger' ? t.dangerBg : t.chip;
-  const fg = kind === 'primary' ? t.onPrimary : kind === 'danger' ? t.danger : t.text;
+  const bg = { primary: t.primaryBg, soft: t.primarySoft, ghost: t.surfaceAlt, danger: t.dangerSoft, inverse: '#FFFFFF' }[kind];
+  const fg = { primary: t.onPrimary, soft: t.primary, ghost: t.text, danger: t.danger, inverse: '#2E2A86' }[kind];
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      android_ripple={{ color: '#00000022' }}
-      style={[styles.btn, small && styles.btnSmall, { backgroundColor: bg, opacity: disabled ? 0.5 : 1 }]}>
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.btn, small && styles.btnSmall, { backgroundColor: bg, opacity: disabled ? 0.45 : 1 }, pressed && styles.pressed, style]}>
       {icon ? <Ionicons name={icon} size={small ? 15 : 18} color={fg} /> : null}
-      <Text style={{ color: fg, fontWeight: '600', fontSize: small ? 13 : 15 }}>{label}</Text>
+      <Text style={{ color: fg, fontFamily: ui.bold, fontSize: small ? 13 : 15, lineHeight: small ? 18 : 20 }}>{label}</Text>
     </Pressable>
   );
 }
 
-export function Chip({ label, active, onPress, color }: { label: string; active?: boolean; onPress?: () => void; color?: string }) {
+export function IconBtn({ icon, onPress, label, color, bg, size = 40 }: {
+  icon: IconName;
+  onPress: () => void;
+  label: string;
+  color?: string;
+  bg?: string;
+  size?: number;
+}) {
   const t = useTheme();
   return (
     <Pressable
       onPress={onPress}
-      disabled={!onPress}
-      style={[styles.chip, { backgroundColor: active ? t.primary : t.chip }]}>
-      <Text style={{ color: active ? t.onPrimary : (color ?? t.text), fontSize: 13, fontWeight: active ? '600' : '400' }}>{label}</Text>
+      hitSlop={6}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      style={({ pressed }) => [{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: bg ?? t.surfaceAlt }, pressed && styles.pressed]}>
+      <Ionicons name={icon} size={Math.round(size * 0.5)} color={color ?? t.text} />
     </Pressable>
   );
 }
 
+export function Chip({ label, active, onPress, icon, count, content: isContent }: {
+  label: string;
+  active?: boolean;
+  onPress?: () => void;
+  icon?: IconName;
+  count?: number;
+  content?: boolean;
+}) {
+  const t = useTheme();
+  const fg = active ? t.onPrimary : t.text;
+  return (
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected: !!active }}
+      style={({ pressed }) => [styles.chip, { backgroundColor: active ? t.primaryBg : t.surface, borderColor: active ? t.primaryBg : t.border }, pressed && styles.pressed]}>
+      {icon ? <Ionicons name={icon} size={15} color={active ? t.onPrimary : t.sub} /> : null}
+      <Txt variant="label" content={isContent} color={fg}>{label}</Txt>
+      {count != null ? <Txt variant="caption" color={active ? t.onPrimary : t.faint}>{count}</Txt> : null}
+    </Pressable>
+  );
+}
+
+/** Small static coloured label. */
+export function Pill({ label, fg, bg, icon, content: isContent }: { label: string; fg: string; bg: string; icon?: IconName; content?: boolean }) {
+  return (
+    <View style={[styles.pill, { backgroundColor: bg }]}>
+      {icon ? <Ionicons name={icon} size={12} color={fg} /> : null}
+      <Txt variant="caption" content={isContent} color={fg} style={isContent ? undefined : { fontFamily: ui.semibold }} numberOfLines={1}>{label}</Txt>
+    </View>
+  );
+}
+
 export function Segments<T extends string>({ options, value, onChange }: {
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; count?: number; dot?: string }[];
   value: T;
   onChange: (v: T) => void;
 }) {
   const t = useTheme();
   return (
-    <View style={[styles.segments, { backgroundColor: t.chip }]}>
+    <View style={[styles.segments, { backgroundColor: t.surfaceAlt }]}>
       {options.map((o) => {
         const on = o.value === value;
         return (
-          <Pressable key={o.value} onPress={() => onChange(o.value)} style={[styles.segment, on && { backgroundColor: t.card }]}>
-            <Text style={{ color: on ? t.text : t.sub, fontWeight: on ? '600' : '400', fontSize: 14 }}>{o.label}</Text>
+          <Pressable
+            key={o.value}
+            onPress={() => onChange(o.value)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: on }}
+            style={[styles.segment, on && [{ backgroundColor: t.surface }, elevation(t)]]}>
+            {o.dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: o.dot }} /> : null}
+            <Txt variant="label" color={on ? t.text : t.sub}>{o.label}</Txt>
+            {o.count != null ? <Txt variant="caption" color={on ? t.primary : t.faint}>{o.count}</Txt> : null}
           </Pressable>
         );
       })}
@@ -91,19 +183,132 @@ export function Segments<T extends string>({ options, value, onChange }: {
   );
 }
 
-export function SectionTitle({ children, color }: { children: ReactNode; color?: string }) {
+// ------------------------------------------------------------------ roles
+
+export function Avatar({ name, role, size = 28, solid }: { name: string | null; role: Role; size?: number; solid?: boolean }) {
+  const t = useTheme();
+  const rc = roleColors(t, role);
+  // `solid` keeps the avatar visible on a card already tinted with the role colour.
+  const c = solid ? { bg: rc.solid, fg: '#FFFFFF' } : rc;
+  const initial = (name ?? '?').trim().charAt(0).toUpperCase() || '?';
   return (
-    <Txt bold size={13} sub={!color} color={color} style={{ marginTop: 18, marginBottom: 8, marginHorizontal: 4 }}>
-      {children}
-    </Txt>
+    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }}>
+      <Text style={{ color: c.fg, fontFamily: content.semibold, fontSize: Math.round(size * 0.46), lineHeight: Math.round(size * 0.72) }}>{initial}</Text>
+    </View>
   );
 }
 
-export function Empty({ text, loading }: { text: string; loading?: boolean }) {
+/** Who it came from: coloured role tag plus the sender's name. */
+export function RoleBadge({ role, name, compact }: { role: Role; name?: string | null; compact?: boolean }) {
+  const t = useTheme();
+  const c = roleColors(t, role);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexShrink: 1 }}>
+      <View style={[styles.pill, { backgroundColor: c.bg }]}>
+        <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: c.solid }} />
+        <Txt variant="caption" color={c.fg} style={{ fontFamily: ui.bold }}>{ROLE_LABEL[role]}</Txt>
+      </View>
+      {!compact && name ? <Txt variant="caption" content sub numberOfLines={1} style={{ flexShrink: 1 }}>{name}</Txt> : null}
+    </View>
+  );
+}
+
+export function RoleFilterBar({ value, onChange, counts }: {
+  value: RoleFilter;
+  onChange: (v: RoleFilter) => void;
+  counts?: Partial<Record<RoleFilter, number>>;
+}) {
   const t = useTheme();
   return (
-    <View style={{ padding: 40, alignItems: 'center' }}>
-      {loading ? <ActivityIndicator color={t.primary} /> : <Txt sub style={{ textAlign: 'center' }}>{text}</Txt>}
+    <Segments
+      value={value}
+      onChange={onChange}
+      options={[
+        { value: 'all', label: 'All', count: counts?.all },
+        { value: 'boss', label: 'Boss', count: counts?.boss, dot: t.bossSolid },
+        { value: 'me', label: 'Me', count: counts?.me, dot: t.meSolid },
+      ]}
+    />
+  );
+}
+
+export function Toggle({ value, onChange, label }: { value: boolean; onChange: (v: boolean) => void; label: string }) {
+  const t = useTheme();
+  // activeThumbColor is react-native-web only; without it the web thumb turns teal.
+  const web = Platform.OS === 'web' ? ({ activeThumbColor: '#FFFFFF' } as object) : {};
+  return <Switch value={value} onValueChange={onChange} accessibilityLabel={label} trackColor={{ true: t.primaryBg, false: t.border }} thumbColor="#FFFFFF" {...web} />;
+}
+
+// ------------------------------------------------------------------ layout
+
+/** Large in-screen header used by the tab screens. */
+export function Header({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: ReactNode; children?: ReactNode }) {
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ paddingTop: insets.top + space.lg, paddingHorizontal: space.lg, paddingBottom: space.sm, gap: space.md }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+        <View style={{ flex: 1 }}>
+          <Txt variant="display">{title}</Txt>
+          {subtitle ? <Txt variant="label" sub>{subtitle}</Txt> : null}
+        </View>
+        {actions}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+/** Compact header with a back button for pushed screens. */
+export function TopBar({ title, right, children }: { title?: string; right?: ReactNode; children?: ReactNode }) {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  return (
+    <View style={{ paddingTop: insets.top + space.sm, paddingHorizontal: space.lg, paddingBottom: space.sm, gap: space.md, backgroundColor: t.bg }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+        <IconBtn icon="chevron-back" label="Back" onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} bg={t.surface} />
+        <View style={{ flex: 1 }}>{title ? <Txt variant="heading">{title}</Txt> : null}</View>
+        {right}
+      </View>
+      {children}
+    </View>
+  );
+}
+
+export function GlobalActions() {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', gap: space.sm }}>
+      <IconBtn icon="search" label="Search" onPress={() => router.push('/search')} bg={t.surface} />
+      <IconBtn icon="settings-outline" label="Settings" onPress={() => router.push('/settings')} bg={t.surface} />
+    </View>
+  );
+}
+
+export function SectionHeader({ title, count, color, action }: { title: string; count?: number; color?: string; action?: ReactNode }) {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: space.xl, marginBottom: space.sm + 2, paddingHorizontal: 2 }}>
+      <Txt variant="overline" color={color ?? t.sub}>{title}</Txt>
+      {count != null ? (
+        <View style={{ paddingHorizontal: 7, paddingVertical: 1, borderRadius: radius.pill, backgroundColor: t.surfaceAlt }}>
+          <Txt variant="caption" color={color ?? t.sub} style={{ fontFamily: ui.bold }}>{count}</Txt>
+        </View>
+      ) : null}
+      <View style={{ flex: 1 }} />
+      {action}
+    </View>
+  );
+}
+
+export function Empty({ icon = 'sparkles-outline', title, text }: { icon?: IconName; title: string; text?: string }) {
+  const t = useTheme();
+  return (
+    <View style={{ paddingVertical: 48, paddingHorizontal: 32, alignItems: 'center', gap: space.sm }}>
+      <View style={{ width: 72, height: 72, borderRadius: 36, backgroundColor: t.primarySoft, alignItems: 'center', justifyContent: 'center', marginBottom: space.sm }}>
+        <Ionicons name={icon} size={32} color={t.primary} />
+      </View>
+      <Txt variant="heading" style={{ textAlign: 'center' }}>{title}</Txt>
+      {text ? <Txt variant="body" sub style={{ textAlign: 'center' }}>{text}</Txt> : null}
     </View>
   );
 }
@@ -112,75 +317,83 @@ export function ErrorBanner({ text }: { text: string | null }) {
   const t = useTheme();
   if (!text) return null;
   return (
-    <View style={{ backgroundColor: t.dangerBg, padding: 10, borderRadius: 10, marginBottom: 10 }}>
-      <Txt size={13} color={t.danger}>সমস্যা হয়েছে: {text}</Txt>
+    <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: t.dangerSoft, padding: space.md, borderRadius: radius.md, marginBottom: space.md }}>
+      <Ionicons name="alert-circle" size={18} color={t.danger} />
+      <Txt variant="label" color={t.danger} style={{ flex: 1 }}>Something went wrong: {text}</Txt>
     </View>
   );
 }
 
-const NEXT_STATUS: Record<Status, { to: Status; label: string }[]> = {
-  todo: [{ to: 'doing', label: 'চলছে' }, { to: 'done', label: 'শেষ' }],
-  doing: [{ to: 'todo', label: 'বাকি' }, { to: 'done', label: 'শেষ' }],
-  done: [{ to: 'todo', label: 'আবার খুলুন' }],
-};
-
-/** One row for a task or note. `onStatus` adds the quick status buttons. */
-export function ItemRow({ item, onStatus }: { item: Item; onStatus?: (to: Status) => void }) {
+/** Pulsing placeholders shown while the first load is in flight. */
+export function Skeleton({ rows = 4, height = 84 }: { rows?: number; height?: number }) {
   const t = useTheme();
-  const overdue = item.type === 'task' && isOverdue(item);
-  const due = dueLabel(item);
-  const done = item.status === 'done';
+  const pulse = useRef(new Animated.Value(0.5)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, { toValue: 1, duration: 700, useNativeDriver: true }),
+        Animated.timing(pulse, { toValue: 0.5, duration: 700, useNativeDriver: true }),
+      ]),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [pulse]);
   return (
-    <Card onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })} style={overdue ? { borderColor: t.danger } : undefined}>
-      <View style={{ flexDirection: 'row', gap: 8, alignItems: 'flex-start' }}>
-        <Txt bold style={[{ flex: 1 }, done && { textDecorationLine: 'line-through', color: t.sub }]}>{item.title}</Txt>
-        {item.has_files ? <Ionicons name="attach" size={18} color={t.sub} /> : null}
-        {item.pinned ? <Ionicons name="pin" size={16} color={t.primary} /> : null}
-      </View>
-      <View style={styles.meta}>
-        {due ? (
-          <Txt size={13} color={overdue ? t.danger : t.sub}>
-            {overdue ? 'মেয়াদ পেরিয়েছে · ' : ''}{due}
-          </Txt>
-        ) : null}
-        {item.type === 'task' && item.priority !== 'normal' ? (
-          <Txt size={13} color={item.priority === 'low' ? t.sub : t.warn}>{PRIORITY_LABEL[item.priority]}</Txt>
-        ) : null}
-        {item.type === 'task' && !onStatus ? <Txt size={13} sub>{STATUS_LABEL[item.status]}</Txt> : null}
-        {item.needs_review ? <Txt size={13} color={t.warn}>যাচাই দরকার</Txt> : null}
-      </View>
-      {onStatus ? (
-        <View style={{ flexDirection: 'row', gap: 8, marginTop: 10 }}>
-          {NEXT_STATUS[item.status].map((n) => (
-            <Btn key={n.to} small kind={n.to === 'done' ? 'primary' : 'plain'} label={n.label} onPress={() => onStatus(n.to)} />
-          ))}
-        </View>
-      ) : null}
-    </Card>
+    <View style={{ gap: space.md }} accessibilityLabel="Loading">
+      {Array.from({ length: rows }, (_, i) => (
+        <Animated.View key={i} style={{ height, borderRadius: radius.lg, backgroundColor: t.surfaceAlt, opacity: pulse }} />
+      ))}
+    </View>
   );
 }
 
-export function HeaderIcons() {
+// ------------------------------------------------------------------ sheet
+
+export function Sheet({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   return (
-    <View style={{ flexDirection: 'row', gap: 18, marginRight: 14 }}>
-      <Pressable hitSlop={10} onPress={() => router.push('/search')} accessibilityLabel="সার্চ">
-        <Ionicons name="search" size={22} color={t.text} />
-      </Pressable>
-      <Pressable hitSlop={10} onPress={() => router.push('/settings')} accessibilityLabel="সেটিংস">
-        <Ionicons name="settings-outline" size={22} color={t.text} />
-      </Pressable>
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
+      <View style={{ flex: 1, justifyContent: 'flex-end' }}>
+        <Pressable accessibilityLabel="Close" onPress={onClose} style={[StyleSheet.absoluteFill, { backgroundColor: t.overlay }]} />
+        <View style={{ backgroundColor: t.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingTop: space.md, paddingBottom: insets.bottom + space.xl, maxHeight: '82%' }}>
+          <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: t.border, marginBottom: space.md }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.xl, marginBottom: space.sm }}>
+            <Txt variant="title" style={{ flex: 1 }}>{title}</Txt>
+            <IconBtn icon="close" label="Close" onPress={onClose} size={36} />
+          </View>
+          <ScrollView contentContainerStyle={{ paddingHorizontal: space.xl, paddingBottom: space.sm }}>{children}</ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+/** One labelled row of mutually exclusive choices inside a sheet. */
+export function OptionGroup<T extends string>({ label, options, value, onChange }: {
+  label: string;
+  options: { value: T; label: string; icon?: IconName }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <View style={{ marginTop: space.lg }}>
+      <Txt variant="overline" sub style={{ marginBottom: space.sm }}>{label}</Txt>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+        {options.map((o) => <Chip key={o.value} label={o.label} icon={o.icon} active={o.value === value} onPress={() => onChange(o.value)} />)}
+      </View>
     </View>
   );
 }
 
 export const styles = StyleSheet.create({
-  list: { padding: 14, paddingBottom: 40 },
-  card: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, padding: 14, marginBottom: 10, overflow: 'hidden' },
-  meta: { flexDirection: 'row', flexWrap: 'wrap', columnGap: 12, marginTop: 4 },
-  btn: { flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingVertical: 12, paddingHorizontal: 18, borderRadius: 12 },
-  btnSmall: { paddingVertical: 7, paddingHorizontal: 12, borderRadius: 9 },
-  chip: { paddingVertical: 6, paddingHorizontal: 12, borderRadius: 999 },
-  segments: { flexDirection: 'row', borderRadius: 12, padding: 3, marginBottom: 12 },
-  segment: { flex: 1, alignItems: 'center', paddingVertical: 8, borderRadius: 10 },
+  list: { paddingHorizontal: space.lg, paddingTop: space.sm, paddingBottom: 120 },
+  card: { borderRadius: radius.lg, borderWidth: StyleSheet.hairlineWidth, padding: space.lg },
+  pressed: { opacity: 0.82, transform: [{ scale: 0.985 }] },
+  btn: { flexDirection: 'row', gap: 8, alignItems: 'center', justifyContent: 'center', paddingVertical: 14, paddingHorizontal: 20, borderRadius: radius.md },
+  btnSmall: { paddingVertical: 8, paddingHorizontal: 12, borderRadius: radius.sm, gap: 6 },
+  chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 3, paddingHorizontal: 8, borderRadius: radius.pill, alignSelf: 'flex-start' },
+  segments: { flexDirection: 'row', borderRadius: radius.md, padding: 4 },
+  segment: { flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: radius.sm },
 });

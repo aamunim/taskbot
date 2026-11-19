@@ -5,11 +5,8 @@ import type { FileRow, Item, Priority, Status } from './types';
 const DHAKA_OFFSET_MS = 6 * 60 * 60 * 1000;
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-const BN_DIGITS = ['০', '১', '২', '৩', '৪', '৫', '৬', '৭', '৮', '৯'];
-const MONTHS = ['জানু', 'ফেব্রু', 'মার্চ', 'এপ্রিল', 'মে', 'জুন', 'জুলাই', 'আগস্ট', 'সেপ্টে', 'অক্টো', 'নভে', 'ডিসে'];
-const WEEKDAYS = ['রবিবার', 'সোমবার', 'মঙ্গলবার', 'বুধবার', 'বৃহস্পতিবার', 'শুক্রবার', 'শনিবার'];
-
-export const bn = (v: number | string) => String(v).replace(/\d/g, (d) => BN_DIGITS[Number(d)]);
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 const shifted = (iso: string | Date) => new Date(new Date(iso).getTime() + DHAKA_OFFSET_MS);
 
@@ -20,24 +17,44 @@ export const todayNumber = () => dayNumber(new Date());
 export function fmtTime(iso: string | Date): string {
   const d = shifted(iso);
   const h = d.getUTCHours();
-  const m = d.getUTCMinutes();
-  const period = h < 4 ? 'রাত' : h < 12 ? 'সকাল' : h < 16 ? 'দুপুর' : h < 18 ? 'বিকাল' : h < 20 ? 'সন্ধ্যা' : 'রাত';
-  return `${period} ${bn(h % 12 === 0 ? 12 : h % 12)}:${bn(String(m).padStart(2, '0'))}`;
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(d.getUTCMinutes()).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
 
 export function fmtDate(iso: string | Date): string {
   const diff = dayNumber(iso) - todayNumber();
-  if (diff === 0) return 'আজ';
-  if (diff === 1) return 'আগামীকাল';
-  if (diff === -1) return 'গতকাল';
+  if (diff === 0) return 'Today';
+  if (diff === 1) return 'Tomorrow';
+  if (diff === -1) return 'Yesterday';
   const d = shifted(iso);
   const sameYear = d.getUTCFullYear() === shifted(new Date()).getUTCFullYear();
-  const base = `${bn(d.getUTCDate())} ${MONTHS[d.getUTCMonth()]}`;
-  if (diff > 1 && diff < 7) return `${WEEKDAYS[d.getUTCDay()]}, ${base}`;
-  return sameYear ? base : `${base} ${bn(d.getUTCFullYear())}`;
+  const base = `${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]}`;
+  if (diff > 1 && diff < 7) return `${WEEKDAYS[d.getUTCDay()].slice(0, 3)}, ${base}`;
+  return sameYear ? base : `${base} ${d.getUTCFullYear()}`;
 }
 
 export const fmtDateTime = (iso: string | Date) => `${fmtDate(iso)}, ${fmtTime(iso)}`;
+
+/** "Thursday, 19 November" for the hero. */
+export function fmtLongDate(iso: string | Date): string {
+  const d = shifted(iso);
+  const month = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][d.getUTCMonth()];
+  return `${WEEKDAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${month}`;
+}
+
+export function greeting(now: Date = new Date()): string {
+  const h = shifted(now).getUTCHours();
+  return h < 5 ? 'Good night' : h < 12 ? 'Good morning' : h < 17 ? 'Good afternoon' : 'Good evening';
+}
+
+/** Heading for grouping by calendar day. */
+export function dayHeading(iso: string): string {
+  const diff = dayNumber(iso) - todayNumber();
+  if (diff === 0) return 'Today';
+  if (diff === -1) return 'Yesterday';
+  if (diff < -1 && diff > -7) return 'Earlier this week';
+  const d = shifted(iso);
+  return `${['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'][d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
 
 export function dueLabel(item: Pick<Item, 'due_at' | 'due_all_day'>): string | null {
   if (!item.due_at) return null;
@@ -64,13 +81,8 @@ export function fromPickerDate(d: Date): string {
   return new Date(utc - DHAKA_OFFSET_MS).toISOString();
 }
 
-export const STATUS_LABEL: Record<Status, string> = { todo: 'বাকি', doing: 'চলছে', done: 'শেষ' };
-export const PRIORITY_LABEL: Record<Priority, string> = {
-  low: 'কম',
-  normal: 'সাধারণ',
-  high: 'জরুরি',
-  urgent: 'অতি জরুরি',
-};
+export const STATUS_LABEL: Record<Status, string> = { todo: 'To do', doing: 'In progress', done: 'Done' };
+export const PRIORITY_LABEL: Record<Priority, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' };
 export const PRIORITY_RANK: Record<Priority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
 
 export type FileGroup = 'photo' | 'voice' | 'document';
@@ -83,34 +95,50 @@ export function fileGroup(f: Pick<FileRow, 'kind' | 'mime_type'>): FileGroup {
 export function fileTitle(f: Pick<FileRow, 'kind' | 'file_name' | 'mime_type'>): string {
   if (f.file_name) return f.file_name;
   const names: Record<string, string> = {
-    photo: 'ছবি',
-    voice: 'ভয়েস মেসেজ',
-    audio: 'অডিও',
-    video: 'ভিডিও',
-    video_note: 'ভিডিও বার্তা',
-    animation: 'অ্যানিমেশন',
-    document: 'ডকুমেন্ট',
+    photo: 'Photo',
+    voice: 'Voice message',
+    audio: 'Audio',
+    video: 'Video',
+    video_note: 'Video message',
+    animation: 'Animation',
+    document: 'Document',
   };
-  return names[f.kind] ?? 'ফাইল';
+  return names[f.kind] ?? 'File';
+}
+
+/** Upper-case extension for the document badge, e.g. "PDF". */
+export function fileExt(f: Pick<FileRow, 'file_name' | 'mime_type' | 'kind'>): string {
+  const m = /\.([A-Za-z0-9]{1,5})$/.exec(f.file_name ?? '');
+  if (m) return m[1].toUpperCase();
+  if (f.kind === 'video' || f.kind === 'animation') return 'VIDEO';
+  return (f.mime_type?.split('/')[1] ?? 'FILE').slice(0, 5).toUpperCase();
 }
 
 export function fmtSize(bytes: number | null): string {
   if (!bytes) return '';
-  if (bytes < 1024 * 1024) return `${bn(Math.max(1, Math.round(bytes / 1024)))} KB`;
-  return `${bn((bytes / 1024 / 1024).toFixed(1))} MB`;
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
 export function fmtDuration(seconds: number): string {
   const s = Math.max(0, Math.floor(seconds));
-  return `${bn(Math.floor(s / 60))}:${bn(String(s % 60).padStart(2, '0'))}`;
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
 export function fileStatusText(f: Pick<FileRow, 'status'>): string | null {
-  if (f.status === 'too_large') return 'ফাইলটি ২০ MB-এর বেশি, তাই সেভ হয়নি। Telegram থেকে দেখুন।';
-  if (f.status === 'failed') return 'ফাইল সেভ করা যায়নি';
-  if (f.status === 'pending') return 'সেভ হচ্ছে…';
+  if (f.status === 'too_large') return 'Over 20 MB, so not saved. Open it in Telegram.';
+  if (f.status === 'failed') return 'Could not be saved';
+  if (f.status === 'pending') return 'Saving…';
   return null;
 }
+
+/** "example.com" and "/path?x" halves of a URL for display. */
+export function splitUrl(url: string, domain: string | null): { host: string; rest: string } {
+  const m = /^https?:\/\/(?:www\.)?([^/?#]+)(.*)$/i.exec(url);
+  return { host: domain ?? m?.[1] ?? url, rest: m?.[2] && m[2] !== '/' ? m[2] : '' };
+}
+
+export const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** Deep link to the original group message; only possible for supergroups (-100…). */
 export function telegramLink(chatId: number | null, tgMessageId: number): string | null {

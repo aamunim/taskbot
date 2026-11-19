@@ -1,59 +1,80 @@
-import { router } from 'expo-router';
+import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
-import { Btn, Card, Empty, ErrorBanner, Txt, styles } from '@/components/ui';
-import { useItems } from '@/lib/data';
-import { bn, dueLabel, fmtDateTime } from '@/lib/format';
+import { DuePill, openItem } from '@/components/items';
+import { Btn, Card, Empty, ErrorBanner, GlobalActions, Header, RoleBadge, Skeleton, Txt, styles } from '@/components/ui';
+import { useData } from '@/lib/data';
+import { fmtDateTime, plural } from '@/lib/format';
+import { radius, space, useTheme } from '@/lib/theme';
 
 export default function Inbox() {
-  const { items, loading, error, refresh, updateItem } = useItems();
+  const t = useTheme();
+  const { items, loading, error, refresh, updateItem, role } = useData();
   const [refreshing, setRefreshing] = useState(false);
   const list = useMemo(() => items.filter((i) => i.needs_review), [items]);
 
   return (
-    <FlatList
-      data={list}
-      keyExtractor={(i) => i.id}
-      contentContainerStyle={styles.list}
-      refreshControl={
-        <RefreshControl
-          refreshing={refreshing}
-          onRefresh={async () => {
-            setRefreshing(true);
-            await refresh();
-            setRefreshing(false);
-          }}
-        />
-      }
-      ListHeaderComponent={
-        <View>
-          <ErrorBanner text={error} />
-          {list.length ? <Txt sub size={13} style={{ marginBottom: 10, marginHorizontal: 4 }}>AI এগুলো নিয়ে নিশ্চিত নয়। ঠিক ভাগটি বেছে নিন।</Txt> : null}
-        </View>
-      }
-      renderItem={({ item }) => {
-        const due = dueLabel(item);
-        return (
-          <Card onPress={() => router.push({ pathname: '/item/[id]', params: { id: item.id } })}>
-            <Txt bold>{item.title}</Txt>
-            {item.details ? <Txt sub size={14} numberOfLines={4} style={{ marginTop: 4 }}>{item.details}</Txt> : null}
-            <Txt size={13} sub style={{ marginTop: 6 }}>
-              AI-এর অনুমান: {item.type === 'task' ? 'কাজ' : 'নোট'}
-              {item.confidence != null ? ` (${bn(Math.round(item.confidence * 100))}% নিশ্চিত)` : ''}
-              {due ? ` · ডেডলাইন ${due}` : ''}
-            </Txt>
-            <Txt size={12} sub>{fmtDateTime(item.created_at)}</Txt>
-            <View style={{ flexDirection: 'row', gap: 8, marginTop: 12 }}>
-              <Btn small kind={item.type === 'task' ? 'primary' : 'plain'} label="কাজ" onPress={() => updateItem(item.id, { type: 'task', needs_review: false }, 'Inbox থেকে "কাজ" হিসেবে নিশ্চিত করা হয়েছে')} />
-              <Btn small kind={item.type === 'note' ? 'primary' : 'plain'} label="নোট" onPress={() => updateItem(item.id, { type: 'note', needs_review: false }, 'Inbox থেকে "নোট" হিসেবে নিশ্চিত করা হয়েছে')} />
-              <View style={{ flex: 1 }} />
-              <Btn small kind="danger" label="বাদ দিন" onPress={() => updateItem(item.id, { dismissed: true }, 'Inbox থেকে বাদ দেওয়া হয়েছে')} />
-            </View>
-          </Card>
-        );
-      }}
-      ListEmptyComponent={<Empty loading={loading} text="যাচাই করার মতো কিছু নেই।" />}
-      ListFooterComponent={list.length ? <Txt sub size={12} style={{ textAlign: 'center' }}>বাদ দিলেও বসের মূল মেসেজ মুছে যায় না।</Txt> : undefined}
-    />
+    <View style={{ flex: 1 }}>
+      <Header title="Inbox" subtitle={list.length ? `${plural(list.length, 'item')} the AI was unsure about` : 'Things the AI was unsure about'} actions={<GlobalActions />} />
+      <FlatList
+        data={list}
+        keyExtractor={(i) => i.id}
+        contentContainerStyle={styles.list}
+        ItemSeparatorComponent={() => <View style={{ height: space.md }} />}
+        refreshControl={
+          <RefreshControl
+            tintColor={t.primary}
+            refreshing={refreshing}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await refresh();
+              setRefreshing(false);
+            }}
+          />
+        }
+        ListHeaderComponent={<ErrorBanner text={error} />}
+        renderItem={({ item }) => {
+          const confidence = item.confidence != null ? Math.round(item.confidence * 100) : null;
+          return (
+            <Card onPress={() => openItem(item.id)} style={{ gap: space.md }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                <View style={{ flex: 1 }}>
+                  <RoleBadge role={role(item.source_sender_tg_id)} name={item.source_sender_name} />
+                </View>
+                <Txt variant="caption" sub>{fmtDateTime(item.created_at)}</Txt>
+              </View>
+              <View style={{ gap: 4 }}>
+                <Txt content strong>{item.title}</Txt>
+                {item.details ? <Txt variant="label" content sub numberOfLines={3}>{item.details}</Txt> : null}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, flexWrap: 'wrap' }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 3, paddingHorizontal: 8, borderRadius: radius.pill, backgroundColor: t.surfaceAlt }}>
+                  <Ionicons name={item.type === 'task' ? 'checkmark-circle-outline' : 'reader-outline'} size={13} color={t.sub} />
+                  <Txt variant="caption" sub strong>AI guess: {item.type === 'task' ? 'Task' : 'Note'}</Txt>
+                </View>
+                <DuePill item={item} />
+              </View>
+              {confidence != null ? (
+                <View style={{ gap: 4 }}>
+                  <View style={{ flexDirection: 'row' }}>
+                    <Txt variant="caption" sub style={{ flex: 1 }}>AI confidence</Txt>
+                    <Txt variant="caption" color={t.boss} strong>{confidence}%</Txt>
+                  </View>
+                  <View style={{ height: 6, borderRadius: 3, backgroundColor: t.surfaceAlt }}>
+                    <View style={{ height: 6, borderRadius: 3, width: `${confidence}%`, backgroundColor: t.bossSolid }} />
+                  </View>
+                </View>
+              ) : null}
+              <View style={{ flexDirection: 'row', gap: space.sm }}>
+                <Btn small icon="checkmark-circle" label="Task" style={{ flex: 1 }} onPress={() => updateItem(item.id, { type: 'task', needs_review: false }, 'Confirmed as a task')} />
+                <Btn small kind="soft" icon="reader" label="Note" style={{ flex: 1 }} onPress={() => updateItem(item.id, { type: 'note', needs_review: false }, 'Confirmed as a note')} />
+                <Btn small kind="danger" icon="close" label="Dismiss" style={{ flex: 1 }} onPress={() => updateItem(item.id, { dismissed: true }, 'Dismissed')} />
+              </View>
+            </Card>
+          );
+        }}
+        ListEmptyComponent={loading ? <Skeleton height={180} rows={2} /> : <Empty icon="shield-checkmark-outline" title="All reviewed" text="Anything the AI is not sure about will wait here for you to confirm." />}
+      />
+    </View>
   );
 }

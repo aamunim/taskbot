@@ -1,6 +1,8 @@
 export type ItemType = 'task' | 'note';
 export type Status = 'todo' | 'doing' | 'done';
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
+export type Role = 'boss' | 'me' | 'other';
+export type RoleFilter = 'all' | 'boss' | 'me';
 
 export type Item = {
   id: string;
@@ -20,6 +22,8 @@ export type Item = {
   user_note: string | null;
   chat_id: number | null;
   source_message_id: string | null;
+  source_sender_tg_id: number | null;
+  source_sender_name: string | null;
   completed_at: string | null;
   created_at: string;
   updated_at: string;
@@ -37,13 +41,37 @@ export type FileRow = {
   duration_seconds: number | null;
   storage_path: string | null;
   status: 'pending' | 'stored' | 'too_large' | 'failed';
+  starred: boolean;
   created_at: string;
 };
+
+export type LinkRow = {
+  id: string;
+  message_id: string;
+  url: string;
+  domain: string | null;
+  starred: boolean;
+  created_at: string;
+};
+
+/** Where a library entry came from: who sent it, when, and the item made from it. */
+export type Origin = {
+  sender_tg_id: number | null;
+  sender_name: string | null;
+  sent_at: string;
+  text: string | null;
+  transcript: string | null;
+  item_id: string | null;
+};
+
+export type LibFile = FileRow & Origin;
+export type LibLink = LinkRow & Origin;
 
 export type Message = {
   id: string;
   chat_id: number;
   tg_message_id: number;
+  sender_tg_id: number | null;
   sender_name: string | null;
   sent_at: string;
   edited_at: string | null;
@@ -51,6 +79,7 @@ export type Message = {
   text: string | null;
   transcript: string | null;
   files: FileRow[];
+  links: LinkRow[];
 };
 
 export type ItemEvent = {
@@ -62,6 +91,9 @@ export type ItemEvent = {
 };
 
 export type AppConfig = {
+  owner_tg_id: number | null;
+  boss_tg_id: number | null;
+  boss_name: string | null;
   timezone: string;
   morning_time: string;
   remind_before_minutes: number;
@@ -73,6 +105,8 @@ export type AppConfig = {
   last_error_at: string | null;
 };
 
+export type Sender = { tg_id: number; name: string | null; message_count: number; last_seen: string };
+
 export type SearchResult = {
   kind: 'task' | 'note' | 'message' | 'file';
   item_id: string | null;
@@ -80,4 +114,6 @@ export type SearchResult = {
   title: string | null;
   snippet: string | null;
   at: string;
+  sender_tg_id: number | null;
+  sender_name: string | null;
 };

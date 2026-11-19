@@ -2,13 +2,40 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAudioPlayer, useAudioPlayerStatus } from 'expo-audio';
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, View } from 'react-native';
+import { signedUrl } from '@/lib/api';
 import { fmtDuration } from '@/lib/format';
-import { signedUrl } from '@/lib/supabase';
 import { useTheme } from '@/lib/theme';
-import { Txt } from './ui';
+import { Txt, styles } from './ui';
+
+// A fixed "waveform" so the player reads as audio at a glance; progress fills it.
+const BARS = [5, 9, 14, 8, 12, 18, 10, 6, 13, 17, 9, 12, 7, 15, 11, 6, 10, 16, 8, 12, 5, 9, 14, 7];
+
+function Wave({ progress }: { progress: number }) {
+  const t = useTheme();
+  return (
+    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 3, height: 24, overflow: 'hidden' }}>
+      {BARS.map((h, i) => (
+        <View key={i} style={{ width: 3, height: h, borderRadius: 2, backgroundColor: i / BARS.length < progress ? t.primary : t.border }} />
+      ))}
+    </View>
+  );
+}
+
+function PlayButton({ playing, onPress }: { playing: boolean; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={8}
+      accessibilityRole="button"
+      accessibilityLabel={playing ? 'Pause' : 'Play'}
+      style={({ pressed }) => [{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.primaryBg, alignItems: 'center', justifyContent: 'center' }, pressed && styles.pressed]}>
+      <Ionicons name={playing ? 'pause' : 'play'} size={18} color={t.onPrimary} style={playing ? undefined : { marginLeft: 2 }} />
+    </Pressable>
+  );
+}
 
 function Player({ url, fallbackDuration, autoPlay }: { url: string; fallbackDuration: number | null; autoPlay: boolean }) {
-  const t = useTheme();
   const player = useAudioPlayer(url, { updateInterval: 500 });
   const status = useAudioPlayerStatus(player);
 
@@ -26,13 +53,9 @@ function Player({ url, fallbackDuration, autoPlay }: { url: string; fallbackDura
 
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-      <Pressable onPress={toggle} hitSlop={8} accessibilityLabel={status.playing ? 'থামান' : 'চালান'}>
-        <Ionicons name={status.playing ? 'pause-circle' : 'play-circle'} size={40} color={t.primary} />
-      </Pressable>
-      <View style={{ flex: 1, height: 4, borderRadius: 2, backgroundColor: t.chip }}>
-        <View style={{ height: 4, borderRadius: 2, backgroundColor: t.primary, width: `${total > 0 ? Math.min(100, (status.currentTime / total) * 100) : 0}%` }} />
-      </View>
-      <Txt size={13} sub>{fmtDuration(status.currentTime)} / {fmtDuration(total)}</Txt>
+      <PlayButton playing={status.playing} onPress={toggle} />
+      <Wave progress={total > 0 ? Math.min(1, status.currentTime / total) : 0} />
+      <Txt variant="caption" sub>{status.currentTime > 0 ? `${fmtDuration(status.currentTime)} / ` : ''}{fmtDuration(total)}</Txt>
     </View>
   );
 }
@@ -63,14 +86,13 @@ export function AudioPlayer({ storagePath, duration, lazy }: { storagePath: stri
   if (!active) {
     return (
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <Pressable onPress={() => setActive(true)} hitSlop={8} accessibilityLabel="চালান">
-          <Ionicons name="play-circle" size={40} color={t.primary} />
-        </Pressable>
-        <Txt size={13} sub>{duration ? fmtDuration(duration) : 'ভয়েস মেসেজ'}</Txt>
+        <PlayButton playing={false} onPress={() => setActive(true)} />
+        <Wave progress={0} />
+        <Txt variant="caption" sub>{duration ? fmtDuration(duration) : 'Voice'}</Txt>
       </View>
     );
   }
-  if (failed) return <Txt size={13} color={t.danger}>অডিও লোড করা যায়নি</Txt>;
+  if (failed) return <Txt variant="label" color={t.danger}>Audio could not be loaded</Txt>;
   if (!url) return <ActivityIndicator color={t.primary} style={{ alignSelf: 'flex-start' }} />;
   return <Player url={url} fallbackDuration={duration} autoPlay={!!lazy} />;
 }

@@ -47,8 +47,3 @@ async function authCall<T>(body: Record<string, string>): Promise<T> {
 export const startLogin = () => authCall<AuthStart>({ action: 'start' });
 export const pollLogin = (code: string, secret: string) =>
   authCall<AuthPoll>({ action: 'poll', code, secret });
-
-export async function signedUrl(path: string): Promise<string | null> {
-  const { data } = await supabase.storage.from('files').createSignedUrl(path, 3600);
-  return data?.signedUrl ?? null;
-}

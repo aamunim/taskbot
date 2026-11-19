@@ -1,66 +1,47 @@
+import { Ionicons } from '@expo/vector-icons';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useState } from 'react';
-import { Alert, ScrollView, Switch, View } from 'react-native';
-import { Btn, Card, Chip, Empty, ErrorBanner, SectionTitle, Txt, styles } from '@/components/ui';
-import { bn, fmtDateTime } from '@/lib/format';
-import { supabase } from '@/lib/supabase';
-import { useTheme } from '@/lib/theme';
-import type { AppConfig } from '@/lib/types';
+import { useCallback, useState, type ReactNode } from 'react';
+import { Alert, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Avatar, Btn, Card, Chip, ErrorBanner, SectionHeader, Sheet, Skeleton, Toggle, TopBar, Txt, styles } from '@/components/ui';
+import * as api from '@/lib/api';
+import { useData } from '@/lib/data';
+import { DEMO } from '@/lib/demo';
+import { fmtDateTime, plural } from '@/lib/format';
+import { useAuth } from '@/lib/auth';
+import { radius, space, useTheme } from '@/lib/theme';
+import type { Sender } from '@/lib/types';
 
 const REMIND: { minutes: number; label: string }[] = [
-  { minutes: 30, label: '৩০ মিনিট' },
-  { minutes: 60, label: '১ ঘণ্টা' },
-  { minutes: 120, label: '২ ঘণ্টা' },
-  { minutes: 360, label: '৬ ঘণ্টা' },
-  { minutes: 1440, label: '১ দিন' },
+  { minutes: 30, label: '30 min' },
+  { minutes: 60, label: '1 hour' },
+  { minutes: 120, label: '2 hours' },
+  { minutes: 360, label: '6 hours' },
+  { minutes: 1440, label: '1 day' },
 ];
 
 // morning_time is a plain wall-clock "HH:MM:SS" in the configured zone, no conversion needed.
 function timeLabel(hhmm: string): string {
   const [h, m] = hhmm.split(':').map(Number);
-  const period = h < 12 ? 'সকাল' : h < 16 ? 'দুপুর' : h < 18 ? 'বিকাল' : 'রাত';
-  return `${period} ${bn(h % 12 === 0 ? 12 : h % 12)}:${bn(String(m).padStart(2, '0'))}`;
+  return `${h % 12 === 0 ? 12 : h % 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`;
 }
-
-type Settings = Pick<AppConfig, 'morning_time' | 'remind_before_minutes' | 'digest_enabled' | 'notify_new_items'>;
 
 export default function SettingsScreen() {
   const t = useTheme();
-  const [cfg, setCfg] = useState<AppConfig | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const load = useCallback(async () => {
-    const { data, error: err } = await supabase
-      .from('app_config')
-      .select('timezone,morning_time,remind_before_minutes,digest_enabled,notify_new_items,last_webhook_at,last_processed_at,last_error,last_error_at')
-      .eq('id', 1)
-      .maybeSingle();
-    if (err) setError(err.message);
-    else setCfg(data as AppConfig | null);
-  }, []);
+  const { config: cfg, error, refresh, saveConfig } = useData();
+  const [senders, setSenders] = useState<Sender[]>([]);
+  const [picking, setPicking] = useState(false);
+  const { signOut } = useAuth();
 
   useFocusEffect(
     useCallback(() => {
-      load();
-    }, [load]),
+      refresh();
+      api.listSenders().then(setSenders);
+    }, [refresh]),
   );
 
-  const save = async (patch: Partial<Settings>) => {
-    if (!cfg) return;
-    const before = cfg;
-    setCfg({ ...cfg, ...patch });
-    const { error: err } = await supabase.from('app_config').update(patch).eq('id', 1);
-    if (err) {
-      setCfg(before);
-      setError(err.message);
-    } else {
-      setError(null);
-    }
-  };
-
   const pickMorning = () => {
-    if (!cfg) return;
+    if (!cfg || Platform.OS !== 'android') return;
     const [h, m] = cfg.morning_time.split(':').map(Number);
     const value = new Date();
     value.setHours(h, m, 0, 0);
@@ -69,79 +50,170 @@ export default function SettingsScreen() {
       mode: 'time',
       is24Hour: false,
       onValueChange: (_e, d) =>
-        save({ morning_time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00` }),
+        saveConfig({ morning_time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00` }),
     });
   };
 
-  const logout = () =>
-    Alert.alert('লগআউট', 'আপনি কি লগআউট করতে চান?', [
-      { text: 'না', style: 'cancel' },
-      { text: 'লগআউট', style: 'destructive', onPress: () => supabase.auth.signOut() },
+  const logout = () => {
+    // Alert has no buttons on web, where only the demo build runs.
+    if (Platform.OS === 'web') return signOut();
+    Alert.alert('Sign out', 'Do you want to sign out?', [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Sign out', style: 'destructive', onPress: signOut },
     ]);
+  };
 
-  if (!cfg) return error ? <View style={styles.list}><ErrorBanner text={error} /></View> : <Empty text="" loading />;
+  if (!cfg) {
+    return (
+      <View style={{ flex: 1 }}>
+        <TopBar title="Settings" />
+        <View style={{ padding: space.lg }}>
+          <ErrorBanner text={error} />
+          <Skeleton rows={3} height={120} />
+        </View>
+      </View>
+    );
+  }
 
   // An error older than the last successful run is no longer the current state.
   const errorIsCurrent = !!cfg.last_error && (!cfg.last_processed_at || !cfg.last_error_at || cfg.last_error_at > cfg.last_processed_at);
+  const me = senders.find((s) => s.tg_id === cfg.owner_tg_id);
+  const others = senders.filter((s) => s.tg_id !== cfg.owner_tg_id);
+  const chooseBoss = async (s: Sender | null) => {
+    setPicking(false);
+    await saveConfig({ boss_tg_id: s?.tg_id ?? null, boss_name: s?.name ?? null });
+  };
 
   return (
-    <ScrollView contentContainerStyle={styles.list}>
-      <ErrorBanner text={error} />
-
-      <SectionTitle>রিমাইন্ডার (Telegram-এ বটের মেসেজে আসবে)</SectionTitle>
-      <Card>
-        <Row label="সকালের সারাংশ" hint="প্রতিদিন আজকের কাজের তালিকা">
-          <Switch value={cfg.digest_enabled} onValueChange={(v) => save({ digest_enabled: v })} />
-        </Row>
-        {cfg.digest_enabled ? (
-          <Row label="সারাংশের সময়">
-            <Btn small kind="plain" icon="time-outline" label={timeLabel(cfg.morning_time)} onPress={pickMorning} />
-          </Row>
+    <View style={{ flex: 1 }}>
+      <TopBar title="Settings" />
+      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: 48 }]}>
+        <ErrorBanner text={error} />
+        {DEMO ? (
+          <Card flat style={{ backgroundColor: t.primarySoft, borderColor: 'transparent', flexDirection: 'row', gap: space.sm }}>
+            <Ionicons name="flask" size={18} color={t.primary} />
+            <Txt variant="label" color={t.primary} style={{ flex: 1 }}>Demo build with sample data. Nothing here is saved.</Txt>
+          </Card>
         ) : null}
-        <Row label="নতুন কাজ এলে জানান" hint="বস নতুন কাজ দিলে সাথে সাথে মেসেজ">
-          <Switch value={cfg.notify_new_items} onValueChange={(v) => save({ notify_new_items: v })} />
-        </Row>
-        <Txt style={{ marginTop: 12 }}>ডেডলাইনের কত আগে সতর্ক করবে</Txt>
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 }}>
-          {REMIND.map((r) => (
-            <Chip key={r.minutes} label={r.label} active={cfg.remind_before_minutes === r.minutes} onPress={() => save({ remind_before_minutes: r.minutes })} />
-          ))}
-        </View>
-        <Txt size={12} sub style={{ marginTop: 10 }}>সময় অঞ্চল: {cfg.timezone}</Txt>
-      </Card>
 
-      <SectionTitle>বটের অবস্থা</SectionTitle>
-      <Card>
-        <Txt size={14}>সর্বশেষ মেসেজ পেয়েছে: {cfg.last_webhook_at ? fmtDateTime(cfg.last_webhook_at) : 'এখনো পায়নি'}</Txt>
-        <Txt size={14}>সর্বশেষ বিশ্লেষণ: {cfg.last_processed_at ? fmtDateTime(cfg.last_processed_at) : 'এখনো হয়নি'}</Txt>
-        {cfg.last_error ? (
-          <View style={{ marginTop: 8 }}>
-            <Txt size={13} color={errorIsCurrent ? t.danger : t.sub}>
-              {errorIsCurrent ? 'ত্রুটি' : 'আগের ত্রুটি (এরপর ঠিকভাবে চলেছে)'}
-              {cfg.last_error_at ? ` · ${fmtDateTime(cfg.last_error_at)}` : ''}
-            </Txt>
-            <Txt size={13} sub selectable>{cfg.last_error}</Txt>
+        <SectionHeader title="People" />
+        <Card style={{ gap: space.lg }}>
+          <Pressable onPress={() => setPicking(true)} accessibilityRole="button" style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.md }, pressed && styles.pressed]}>
+            <Avatar role="boss" name={cfg.boss_name ?? 'B'} size={44} />
+            <View style={{ flex: 1 }}>
+              <Txt variant="label" color={t.boss} strong>Boss</Txt>
+              {cfg.boss_tg_id ? <Txt content strong numberOfLines={1}>{cfg.boss_name ?? 'Unnamed'}</Txt> : <Txt variant="body" strong>Not chosen yet</Txt>}
+              {!cfg.boss_tg_id ? <Txt variant="caption" sub>Until then, everyone except you counts as the boss.</Txt> : null}
+            </View>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}>
+              <Txt variant="label" color={t.primary} strong>Change</Txt>
+              <Ionicons name="chevron-forward" size={16} color={t.primary} />
+            </View>
+          </Pressable>
+          <View style={{ height: 1, backgroundColor: t.border }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <Avatar role="me" name={me?.name ?? 'M'} size={44} />
+            <View style={{ flex: 1 }}>
+              <Txt variant="label" color={t.me} strong>Me</Txt>
+              {me?.name ? <Txt content strong numberOfLines={1}>{me.name}</Txt> : <Txt variant="body" strong>You</Txt>}
+              <Txt variant="caption" sub>The Telegram account you signed in with.</Txt>
+            </View>
           </View>
-        ) : (
-          <Txt size={13} color={t.success} style={{ marginTop: 8 }}>কোনো ত্রুটি নেই</Txt>
-        )}
-      </Card>
+        </Card>
 
-      <View style={{ marginTop: 20 }}>
-        <Btn kind="danger" icon="log-out-outline" label="লগআউট" onPress={logout} />
-      </View>
-    </ScrollView>
+        <SectionHeader title="Reminders" />
+        <Card style={{ gap: space.lg }}>
+          <Txt variant="caption" sub>Reminders arrive as private Telegram messages from the bot.</Txt>
+          <Row label="Morning summary" hint="Today's tasks, once a day">
+            <Toggle label="Morning summary" value={cfg.digest_enabled} onChange={(v) => void saveConfig({ digest_enabled: v })} />
+          </Row>
+          {cfg.digest_enabled ? (
+            <Row label="Summary time">
+              <Btn small kind="soft" icon="time-outline" label={timeLabel(cfg.morning_time)} onPress={pickMorning} />
+            </Row>
+          ) : null}
+          <Row label="New items" hint="A message as soon as something new is picked up">
+            <Toggle label="New items" value={cfg.notify_new_items} onChange={(v) => void saveConfig({ notify_new_items: v })} />
+          </Row>
+          <View style={{ gap: space.sm }}>
+            <Txt variant="body" strong>Warn me before a deadline</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {REMIND.map((r) => <Chip key={r.minutes} label={r.label} active={cfg.remind_before_minutes === r.minutes} onPress={() => saveConfig({ remind_before_minutes: r.minutes })} />)}
+            </View>
+          </View>
+          <Txt variant="caption" sub>Time zone: {cfg.timezone}</Txt>
+        </Card>
+
+        <SectionHeader title="Bot status" />
+        <Card style={{ gap: space.md }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: errorIsCurrent ? t.dangerSolid : t.success }} />
+            <Txt variant="body" strong color={errorIsCurrent ? t.danger : t.success}>{errorIsCurrent ? 'Something needs attention' : 'Running normally'}</Txt>
+          </View>
+          <Fact label="Last message received" value={cfg.last_webhook_at ? fmtDateTime(cfg.last_webhook_at) : 'None yet'} />
+          <Fact label="Last analysis" value={cfg.last_processed_at ? fmtDateTime(cfg.last_processed_at) : 'None yet'} />
+          {cfg.last_error ? (
+            <View style={{ backgroundColor: errorIsCurrent ? t.dangerSoft : t.surfaceAlt, borderRadius: radius.md, padding: space.md, gap: 2 }}>
+              <Txt variant="caption" color={errorIsCurrent ? t.danger : t.sub} strong>
+                {errorIsCurrent ? 'Error' : 'Earlier error (it has run fine since)'}{cfg.last_error_at ? ` · ${fmtDateTime(cfg.last_error_at)}` : ''}
+              </Txt>
+              <Txt variant="caption" sub selectable>{cfg.last_error}</Txt>
+            </View>
+          ) : null}
+        </Card>
+
+        <Btn kind="danger" icon="log-out-outline" label="Sign out" onPress={logout} style={{ marginTop: space.xxl }} />
+      </ScrollView>
+
+      <Sheet visible={picking} onClose={() => setPicking(false)} title="Who is your boss?">
+        <Txt variant="label" sub>Pick the person whose messages count as coming from your boss. Telegram does not share phone numbers with bots, so choose by name.</Txt>
+        <View style={{ gap: space.sm, marginTop: space.lg }}>
+          {others.map((s) => (
+            <Choice key={s.tg_id} selected={cfg.boss_tg_id === s.tg_id} onPress={() => chooseBoss(s)} title={s.name ?? `User ${s.tg_id}`} subtitle={`${plural(s.message_count, 'message')} · last ${fmtDateTime(s.last_seen)}`} avatar={<Avatar role={cfg.boss_tg_id === s.tg_id ? 'boss' : 'other'} name={s.name} size={40} />} contentTitle />
+          ))}
+          {!others.length ? <Txt variant="label" sub>Nobody else has written in the group yet.</Txt> : null}
+          <Choice selected={cfg.boss_tg_id == null} onPress={() => chooseBoss(null)} title="Everyone except me" subtitle="Treat all other senders as the boss" avatar={<View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="people" size={20} color={t.sub} /></View>} />
+        </View>
+      </Sheet>
+    </View>
   );
 }
 
-function Row({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+function Row({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
   return (
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 6 }}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
       <View style={{ flex: 1 }}>
-        <Txt>{label}</Txt>
-        {hint ? <Txt size={12} sub>{hint}</Txt> : null}
+        <Txt variant="body" strong>{label}</Txt>
+        {hint ? <Txt variant="caption" sub>{hint}</Txt> : null}
       </View>
       {children}
     </View>
+  );
+}
+
+function Fact({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flexDirection: 'row', gap: space.md }}>
+      <Txt variant="label" sub style={{ flex: 1 }}>{label}</Txt>
+      <Txt variant="label">{value}</Txt>
+    </View>
+  );
+}
+
+function Choice({ selected, onPress, title, subtitle, avatar, contentTitle }: { selected: boolean; onPress: () => void; title: string; subtitle: string; avatar: ReactNode; contentTitle?: boolean }) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityState={{ selected }}
+      style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.md, padding: space.md, borderRadius: radius.lg, borderWidth: 1.5, borderColor: selected ? t.primary : t.border, backgroundColor: selected ? t.primarySoft : t.surface }, pressed && styles.pressed]}>
+      {avatar}
+      <View style={{ flex: 1 }}>
+        <Txt variant="body" content={contentTitle} strong numberOfLines={1}>{title}</Txt>
+        <Txt variant="caption" sub>{subtitle}</Txt>
+      </View>
+      <Ionicons name={selected ? 'radio-button-on' : 'radio-button-off'} size={22} color={selected ? t.primary : t.faint} />
+    </Pressable>
   );
 }

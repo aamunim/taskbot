@@ -1,15 +1,30 @@
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import * as Linking from 'expo-linking';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, AppState, View } from 'react-native';
-import { Btn, Txt } from '@/components/ui';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Logo } from '@/components/Logo';
+import { Btn, Txt, type IconName } from '@/components/ui';
+import { useAuth } from '@/lib/auth';
+import { DEMO } from '@/lib/demo';
 import { isConfigured, pollLogin, startLogin, supabase } from '@/lib/supabase';
-import { useTheme } from '@/lib/theme';
+import { radius, space, useTheme } from '@/lib/theme';
 
 type Pending = { code: string; secret: string; url: string };
+const GLASS = 'rgba(255,255,255,0.14)';
+const SOFT = 'rgba(255,255,255,0.82)';
+
+const FEATURES: { icon: IconName; title: string; text: string }[] = [
+  { icon: 'chatbubbles', title: 'Nothing gets lost', text: 'Every message, file and voice note from the group is kept.' },
+  { icon: 'sparkles', title: 'Sorted for you', text: 'Tasks, deadlines and notes are picked out automatically.' },
+  { icon: 'people', title: 'Boss and you, apart', text: 'See what was asked of you and what you promised.' },
+];
 
 export default function Login() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const { demoSignIn } = useAuth();
   const [pending, setPending] = useState<Pending | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -24,15 +39,15 @@ export default function Login() {
         const { error } = await supabase.auth.verifyOtp({ token_hash: res.token_hash, type: 'email' });
         if (error) {
           setPending(null);
-          setMessage('লগইন সম্পূর্ণ করা যায়নি। আবার চেষ্টা করুন।');
+          setMessage('Sign-in could not be completed. Please try again.');
         }
         // On success the auth listener swaps this screen out.
       } else if (res.status === 'expired') {
         setPending(null);
-        setMessage('সময় শেষ হয়ে গেছে। আবার চেষ্টা করুন।');
+        setMessage('That took too long. Please try again.');
       } else if (res.status === 'denied') {
         setPending(null);
-        setMessage('এই Telegram অ্যাকাউন্টের অনুমতি নেই।');
+        setMessage('This Telegram account is not allowed to use this app.');
       }
     } catch {
       // Network hiccup: keep polling.
@@ -54,6 +69,7 @@ export default function Login() {
   }, [pending, check]);
 
   const begin = async () => {
+    if (DEMO) return demoSignIn();
     setBusy(true);
     setMessage(null);
     try {
@@ -61,33 +77,62 @@ export default function Login() {
       setPending(p);
       await Linking.openURL(p.url);
     } catch {
-      setMessage('সার্ভারের সাথে যোগাযোগ করা যায়নি। ইন্টারনেট সংযোগ দেখে আবার চেষ্টা করুন।');
+      setMessage('Could not reach the server. Check your connection and try again.');
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: t.bg, padding: 28, justifyContent: 'center', gap: 16 }}>
-      <Ionicons name="checkbox-outline" size={56} color={t.primary} />
-      <Txt bold size={28}>TaskBot</Txt>
-      <Txt sub>বসের দেওয়া কাজ, নোট আর ফাইল এক জায়গায়।</Txt>
-      <View style={{ height: 12 }} />
-      {!isConfigured ? (
-        <Txt color={t.danger}>অ্যাপ কনফিগার করা হয়নি: .env ফাইলে Supabase URL ও anon key দিন।</Txt>
-      ) : pending ? (
-        <>
-          <View style={{ flexDirection: 'row', gap: 10, alignItems: 'center' }}>
-            <ActivityIndicator color={t.primary} />
-            <Txt style={{ flex: 1 }}>Telegram-এ বটের চ্যাটে Start চাপুন, তারপর এখানে ফিরে আসুন।</Txt>
+    <LinearGradient colors={t.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, paddingTop: insets.top + space.xxl, paddingBottom: insets.bottom + space.xl, paddingHorizontal: space.xl + 4 }}>
+      <View style={{ flex: 1, justifyContent: 'center', gap: space.xxl }}>
+        <View style={{ gap: space.md }}>
+          <Logo size={88} cut={t.hero[1]} />
+          <Txt variant="display" color="#FFFFFF" style={{ fontSize: 36, lineHeight: 42 }}>TaskBot</Txt>
+          <Txt variant="body" color={SOFT} style={{ fontSize: 17, lineHeight: 25 }}>Everything your boss asks for, kept in one place.</Txt>
+        </View>
+        <View style={{ gap: space.md }}>
+          {FEATURES.map((f) => (
+            <View key={f.title} style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', backgroundColor: GLASS, borderRadius: radius.lg, padding: space.md + 2 }}>
+              <View style={{ width: 40, height: 40, borderRadius: 14, backgroundColor: GLASS, alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={f.icon} size={20} color="#FFFFFF" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Txt variant="body" color="#FFFFFF" strong>{f.title}</Txt>
+                <Txt variant="label" color={SOFT}>{f.text}</Txt>
+              </View>
+            </View>
+          ))}
+        </View>
+      </View>
+
+      <View style={{ gap: space.md }}>
+        {message ? (
+          <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: 'rgba(0,0,0,0.28)', borderRadius: radius.md, padding: space.md }}>
+            <Ionicons name="alert-circle" size={18} color="#FFD0D8" />
+            <Txt variant="label" color="#FFFFFF" style={{ flex: 1 }}>{message}</Txt>
           </View>
-          <Btn kind="plain" label="Telegram আবার খুলুন" onPress={() => Linking.openURL(pending.url)} />
-          <Btn kind="plain" label="বাতিল" onPress={() => setPending(null)} />
-        </>
-      ) : (
-        <Btn icon="paper-plane" label="Telegram দিয়ে লগইন" onPress={begin} disabled={busy} />
-      )}
-      {message ? <Txt color={t.danger}>{message}</Txt> : null}
-    </View>
+        ) : null}
+        {!isConfigured ? (
+          <View style={{ backgroundColor: 'rgba(0,0,0,0.28)', borderRadius: radius.md, padding: space.md }}>
+            <Txt variant="label" color="#FFFFFF">The app is not configured: the Supabase URL and anon key are missing from this build.</Txt>
+          </View>
+        ) : pending ? (
+          <>
+            <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', backgroundColor: GLASS, borderRadius: radius.lg, padding: space.lg }}>
+              <ActivityIndicator color="#FFFFFF" />
+              <Txt variant="label" color="#FFFFFF" style={{ flex: 1 }}>Press Start in the bot's chat in Telegram, then come back here.</Txt>
+            </View>
+            <Btn kind="inverse" icon="paper-plane" label="Open Telegram again" onPress={() => Linking.openURL(pending.url)} />
+            <Btn kind="ghost" label="Cancel" onPress={() => setPending(null)} style={{ backgroundColor: GLASS }} />
+          </>
+        ) : (
+          <>
+            <Btn kind="inverse" icon="paper-plane" label={busy ? 'Opening Telegram…' : 'Continue with Telegram'} onPress={begin} disabled={busy} />
+            <Txt variant="caption" color={SOFT} style={{ textAlign: 'center' }}>No password. You confirm once inside Telegram.</Txt>
+          </>
+        )}
+      </View>
+    </LinearGradient>
   );
 }

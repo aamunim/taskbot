@@ -1,37 +1,30 @@
+import { Ionicons } from '@expo/vector-icons';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { KeyboardAvoidingView, ScrollView, Switch, TextInput, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AudioPlayer } from '@/components/AudioPlayer';
-import { FileLine } from '@/components/FileList';
-import { Btn, Card, Chip, Empty, ErrorBanner, SectionTitle, Txt, styles } from '@/components/ui';
-import { useItems } from '@/lib/data';
-import {
-  PRIORITY_LABEL,
-  STATUS_LABEL,
-  fileGroup,
-  fmtDate,
-  fmtDateTime,
-  fmtTime,
-  fromPickerDate,
-  telegramLink,
-  toPickerDate,
-} from '@/lib/format';
-import { supabase } from '@/lib/supabase';
-import { useTheme } from '@/lib/theme';
-import type { Item, ItemEvent, Message, Priority, Status } from '@/lib/types';
+import { AttachmentRow } from '@/components/library';
+import { Avatar, Btn, Card, Chip, Empty, ErrorBanner, IconBtn, Pill, SectionHeader, Segments, Skeleton, Toggle, TopBar, Txt, styles } from '@/components/ui';
+import * as api from '@/lib/api';
+import { useData } from '@/lib/data';
+import { PRIORITY_LABEL, STATUS_LABEL, fileGroup, fmtDate, fmtDateTime, fmtTime, fromPickerDate, splitUrl, telegramLink, toPickerDate } from '@/lib/format';
+import { ROLE_LABEL, roleColors } from '@/lib/roles';
+import { content, elevation, noOutline, radius, space, useTheme } from '@/lib/theme';
+import type { Item, ItemEvent, ItemType, Message, Priority, Status } from '@/lib/types';
 
 type Draft = Pick<Item, 'title' | 'details' | 'type' | 'status' | 'priority' | 'due_at' | 'due_all_day' | 'user_note'>;
 const FIELD_LABEL: Record<keyof Draft, string> = {
-  title: 'শিরোনাম',
-  details: 'বিবরণ',
-  type: 'ধরন',
-  status: 'স্ট্যাটাস',
-  priority: 'অগ্রাধিকার',
-  due_at: 'ডেডলাইন',
-  due_all_day: 'ডেডলাইন',
-  user_note: 'আমার মন্তব্য',
+  title: 'Title',
+  details: 'Details',
+  type: 'Type',
+  status: 'Status',
+  priority: 'Priority',
+  due_at: 'Deadline',
+  due_all_day: 'Deadline',
+  user_note: 'My note',
 };
 const STATUSES: Status[] = ['todo', 'doing', 'done'];
 const PRIORITIES: Priority[] = ['low', 'normal', 'high', 'urgent'];
@@ -50,8 +43,9 @@ const same = (a: unknown, b: unknown) => (a ?? '') === (b ?? '');
 
 export default function ItemDetail() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { items, updateItem } = useItems();
+  const { items, updateItem, role } = useData();
   const fromList = items.find((i) => i.id === id);
   const [fetched, setFetched] = useState<Item | null>(null);
   const [missing, setMissing] = useState(false);
@@ -66,15 +60,10 @@ export default function ItemDetail() {
   // Dismissed items are not in the shared list (e.g. opened from search).
   useEffect(() => {
     if (fromList || !id) return;
-    supabase
-      .from('items')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle()
-      .then(({ data }) => {
-        if (data) setFetched({ ...(data as Omit<Item, 'has_files'>), has_files: false });
-        else setMissing(true);
-      });
+    api.fetchItem(id).then((data) => {
+      if (data) setFetched(data);
+      else setMissing(true);
+    });
   }, [fromList, id]);
 
   // Start editing from the stored values; do not clobber unsaved edits on realtime refreshes.
@@ -84,22 +73,10 @@ export default function ItemDetail() {
 
   const loadExtras = useCallback(async () => {
     if (!id) return;
-    const [m, e] = await Promise.all([
-      supabase
-        .from('item_messages')
-        .select('messages(id,chat_id,tg_message_id,sender_name,sent_at,edited_at,kind,text,transcript,files(id,message_id,kind,file_name,mime_type,size_bytes,duration_seconds,storage_path,status,created_at))')
-        .eq('item_id', id)
-        .overrideTypes<{ messages: Message | null }[], { merge: false }>(),
-      supabase.from('item_events').select('id,item_id,actor,summary,created_at').eq('item_id', id).order('created_at', { ascending: false }).limit(50),
-    ]);
-    if (m.error) setError(m.error.message);
-    setMessages(
-      (m.data ?? [])
-        .map((r) => r.messages)
-        .filter((x): x is Message => !!x)
-        .sort((a, b) => a.sent_at.localeCompare(b.sent_at)),
-    );
-    setEvents((e.data ?? []) as ItemEvent[]);
+    const res = await api.fetchItemExtras(id);
+    if (res.error) setError(res.error);
+    setMessages(res.data.messages);
+    setEvents(res.data.events);
   }, [id]);
 
   useEffect(() => {
@@ -112,13 +89,29 @@ export default function ItemDetail() {
     return (Object.keys(base) as (keyof Draft)[]).filter((k) => !same(base[k], draft[k]));
   }, [item, draft]);
 
-  if (missing) return <Empty text="আইটেমটি পাওয়া যায়নি।" />;
-  if (!item || !draft) return <Empty text="" loading />;
+  if (missing) {
+    return (
+      <View style={{ flex: 1 }}>
+        <TopBar />
+        <Empty icon="search-outline" title="Not found" text="This item no longer exists." />
+      </View>
+    );
+  }
+  if (!item || !draft) {
+    return (
+      <View style={{ flex: 1 }}>
+        <TopBar />
+        <View style={{ padding: space.lg }}><Skeleton height={120} rows={3} /></View>
+      </View>
+    );
+  }
 
+  const r = role(item.source_sender_tg_id);
+  const rc = roleColors(t, r);
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
-  const inputStyle = { color: t.text, backgroundColor: t.card, borderColor: t.border, borderWidth: 1, borderRadius: 12, padding: 12, fontSize: 15, lineHeight: 22 };
 
-  const pick = (mode: 'date' | 'time') =>
+  const pick = (mode: 'date' | 'time') => {
+    if (Platform.OS !== 'android') return;
     DateTimePickerAndroid.open({
       value: toPickerDate(draft.due_at),
       mode,
@@ -132,6 +125,7 @@ export default function ItemDetail() {
         }
       },
     });
+  };
 
   const setAllDay = (on: boolean) => {
     if (!draft.due_at) return;
@@ -142,151 +136,205 @@ export default function ItemDetail() {
   };
 
   const save = async () => {
-    if (!draft.title.trim()) return setError('শিরোনাম খালি রাখা যাবে না।');
+    if (!draft.title.trim()) return setError('The title cannot be empty.');
     setSaving(true);
     setError(null);
     const patch: Partial<Item> = {};
     for (const k of changed) Object.assign(patch, { [k]: k === 'title' ? draft.title.trim() : draft[k] });
     const labels = [...new Set(changed.map((k) => FIELD_LABEL[k]))];
-    const ok = await updateItem(item.id, patch, `আপনি পরিবর্তন করেছেন: ${labels.join(', ')}`);
+    const ok = await updateItem(item.id, patch, `You changed: ${labels.join(', ')}`);
     setSaving(false);
-    if (!ok) return setError('সংরক্ষণ করা যায়নি। আবার চেষ্টা করুন।');
+    if (!ok) return setError('Could not save. Please try again.');
     if (fetched) setFetched({ ...fetched, ...patch });
     setDraft({ ...draft, title: draft.title.trim() });
     loadExtras();
   };
 
   const setDismissed = async (dismissed: boolean) => {
-    const ok = await updateItem(item.id, { dismissed }, dismissed ? 'বাদ দেওয়া হয়েছে' : 'ফিরিয়ে আনা হয়েছে');
+    const ok = await updateItem(item.id, { dismissed }, dismissed ? 'Dismissed' : 'Restored');
     if (ok && dismissed) router.back();
     else if (ok && fetched) setFetched({ ...fetched, dismissed });
   };
 
+  const input = { color: t.text, fontFamily: content.regular, fontSize: 16, lineHeight: 24, padding: 0, ...noOutline } as const;
+  const typeOptions: { value: ItemType; label: string }[] = [{ value: 'task', label: 'Task' }, { value: 'note', label: 'Note' }];
+
   return (
-    <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding" keyboardVerticalOffset={90}>
-      <ScrollView contentContainerStyle={styles.list} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+      <TopBar
+        title={draft.type === 'task' ? 'Task' : 'Note'}
+        right={!item.dismissed ? <IconBtn icon="trash-outline" label="Dismiss this item" onPress={() => setDismissed(true)} bg={t.surface} color={t.danger} /> : undefined}
+      />
+      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: changed.length ? 140 : 48, gap: space.md }]} keyboardShouldPersistTaps="handled">
         <ErrorBanner text={error} />
+
         {item.needs_review ? (
-          <Card style={{ borderColor: t.warn }}>
-            <Txt size={13} color={t.warn}>AI এটি নিয়ে নিশ্চিত নয়। ঠিক থাকলে নিশ্চিত করুন, নইলে নিচে সম্পাদনা করুন।</Txt>
-            <View style={{ alignItems: 'flex-start', marginTop: 8 }}>
-              <Btn small label="ঠিক আছে, নিশ্চিত করুন" onPress={() => updateItem(item.id, { needs_review: false }, 'যাচাই করে নিশ্চিত করা হয়েছে')} />
+          <Card flat style={{ backgroundColor: t.bossSoft, borderColor: 'transparent', gap: space.md }}>
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <Ionicons name="help-buoy" size={20} color={t.boss} />
+              <Txt variant="label" color={t.boss} style={{ flex: 1 }}>The AI was not sure about this one. Confirm it if it looks right, or edit it below.</Txt>
             </View>
+            <Btn small icon="checkmark" label="Looks right" onPress={() => updateItem(item.id, { needs_review: false }, 'Reviewed and confirmed')} style={{ alignSelf: 'flex-start' }} />
           </Card>
         ) : null}
         {item.dismissed ? (
-          <Card>
-            <Txt sub size={13}>এই আইটেমটি বাদ দেওয়া হয়েছে।</Txt>
-            <View style={{ alignItems: 'flex-start', marginTop: 8 }}>
-              <Btn small kind="plain" label="ফিরিয়ে আনুন" onPress={() => setDismissed(false)} />
-            </View>
+          <Card flat style={{ backgroundColor: t.surfaceAlt, borderColor: 'transparent', flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <Txt variant="label" sub style={{ flex: 1 }}>This item was dismissed.</Txt>
+            <Btn small kind="soft" label="Restore" onPress={() => setDismissed(false)} />
           </Card>
         ) : null}
 
-        <TextInput value={draft.title} onChangeText={(title) => set({ title })} multiline placeholder="শিরোনাম" placeholderTextColor={t.sub} style={[inputStyle, { fontSize: 18, fontWeight: '600', lineHeight: 26 }]} />
-        <TextInput value={draft.details ?? ''} onChangeText={(details) => set({ details: details || null })} multiline placeholder="বিবরণ" placeholderTextColor={t.sub} style={[inputStyle, { marginTop: 10, minHeight: 80, textAlignVertical: 'top' }]} />
-
-        <SectionTitle>ধরন</SectionTitle>
-        <View style={{ flexDirection: 'row', gap: 8 }}>
-          <Chip label="কাজ" active={draft.type === 'task'} onPress={() => set({ type: 'task' })} />
-          <Chip label="নোট" active={draft.type === 'note'} onPress={() => set({ type: 'note' })} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingHorizontal: 2 }}>
+          <Avatar role={r} name={item.source_sender_name} size={40} />
+          <View style={{ flex: 1 }}>
+            <Txt variant="label" color={rc.fg} strong>{r === 'boss' ? 'From boss' : r === 'me' ? 'From me' : `From ${ROLE_LABEL.other.toLowerCase()}`}</Txt>
+            <Txt variant="caption" sub numberOfLines={1}>
+              <Txt variant="caption" content sub>{item.source_sender_name ?? 'Unknown'}</Txt> · {fmtDateTime(item.created_at)}
+            </Txt>
+          </View>
+          {item.pinned ? <Ionicons name="bookmark" size={18} color={t.primary} /> : null}
         </View>
 
-        {draft.type === 'task' ? (
-          <>
-            <SectionTitle>স্ট্যাটাস</SectionTitle>
-            <View style={{ flexDirection: 'row', gap: 8 }}>
-              {STATUSES.map((s) => <Chip key={s} label={STATUS_LABEL[s]} active={draft.status === s} onPress={() => set({ status: s })} />)}
+        <Card style={{ gap: space.md, borderLeftWidth: 4, borderLeftColor: rc.solid }}>
+          <TextInput value={draft.title} onChangeText={(title) => set({ title })} multiline placeholder="Title" placeholderTextColor={t.faint} style={[input, { fontFamily: content.semibold, fontSize: 21, lineHeight: 31 }]} />
+          <View style={{ height: 1, backgroundColor: t.border }} />
+          <TextInput value={draft.details ?? ''} onChangeText={(details) => set({ details: details || null })} multiline placeholder="Add details" placeholderTextColor={t.faint} style={[input, { minHeight: 48, textAlignVertical: 'top' }]} />
+          {item.tags.length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+              {item.tags.map((g) => <Pill key={g} content label={`#${g}`} fg={t.primary} bg={t.primarySoft} />)}
             </View>
+          ) : null}
+        </Card>
 
-            <SectionTitle>অগ্রাধিকার</SectionTitle>
-            <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-              {PRIORITIES.map((p) => <Chip key={p} label={PRIORITY_LABEL[p]} active={draft.priority === p} onPress={() => set({ priority: p })} />)}
-            </View>
-
-            <SectionTitle>ডেডলাইন</SectionTitle>
-            <Card>
-              <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
-                <Btn small kind="plain" icon="calendar-outline" label={draft.due_at ? fmtDate(draft.due_at) : 'তারিখ দিন'} onPress={() => pick('date')} />
-                {draft.due_at && !draft.due_all_day ? <Btn small kind="plain" icon="time-outline" label={fmtTime(draft.due_at)} onPress={() => pick('time')} /> : null}
-                {draft.due_at ? <Btn small kind="danger" label="মুছুন" onPress={() => set({ due_at: null, due_all_day: false })} /> : null}
-              </View>
-              {draft.due_at ? (
-                <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 8 }}>
-                  <Txt size={14}>নির্দিষ্ট সময় ছাড়া (সারাদিন)</Txt>
-                  <Switch value={draft.due_all_day} onValueChange={setAllDay} />
+        <Card style={{ gap: space.lg }}>
+          <Field label="Type">
+            <Segments options={typeOptions} value={draft.type} onChange={(type) => set({ type })} />
+          </Field>
+          {draft.type === 'task' ? (
+            <>
+              <Field label="Status">
+                <Segments options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))} value={draft.status} onChange={(status) => set({ status })} />
+              </Field>
+              <Field label="Priority">
+                <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+                  {PRIORITIES.map((p) => <Chip key={p} label={PRIORITY_LABEL[p]} active={draft.priority === p} onPress={() => set({ priority: p })} />)}
                 </View>
-              ) : null}
-              {item.due_text ? <Txt size={12} sub style={{ marginTop: 6 }}>বসের ভাষায়: "{item.due_text}"</Txt> : null}
-            </Card>
-          </>
-        ) : null}
-
-        <SectionTitle>আমার মন্তব্য</SectionTitle>
-        <TextInput value={draft.user_note ?? ''} onChangeText={(v) => set({ user_note: v || null })} multiline placeholder="নিজের জন্য নোট লিখুন (বস দেখবেন না)" placeholderTextColor={t.sub} style={[inputStyle, { minHeight: 60, textAlignVertical: 'top' }]} />
-
-        {item.tags.length ? (
-          <View style={[styles.meta, { marginTop: 12, marginHorizontal: 4 }]}>
-            {item.tags.map((g) => <Txt key={g} size={13} color={t.primary}>#{g}</Txt>)}
-          </View>
-        ) : null}
-
-        {changed.length ? (
-          <View style={{ flexDirection: 'row', gap: 10, marginTop: 16 }}>
-            <View style={{ flex: 1 }}><Btn label={saving ? 'সংরক্ষণ হচ্ছে…' : 'সংরক্ষণ করুন'} onPress={save} disabled={saving} /></View>
-            <Btn kind="plain" label="বাতিল" onPress={() => setDraft(draftOf(item))} disabled={saving} />
-          </View>
-        ) : null}
-
-        <SectionTitle>বসের মূল মেসেজ</SectionTitle>
-        {!messages.length ? <Txt sub size={13} style={{ marginHorizontal: 4 }}>কোনো মেসেজ যুক্ত নেই।</Txt> : null}
-        {messages.map((m) => {
-          const link = telegramLink(m.chat_id, m.tg_message_id);
-          return (
-            <Card key={m.id}>
-              <Txt size={12} sub>
-                {m.sender_name ?? 'অজানা'} · {fmtDateTime(m.sent_at)}{m.edited_at ? ' · সম্পাদিত' : ''}
-              </Txt>
-              {m.text ? <Txt selectable style={{ marginTop: 6 }}>{m.text}</Txt> : null}
-              {m.files.map((f) =>
-                fileGroup(f) === 'voice' && f.status === 'stored' && f.storage_path ? (
-                  <View key={f.id} style={{ marginTop: 8 }}>
-                    <AudioPlayer storagePath={f.storage_path} duration={f.duration_seconds} />
+              </Field>
+              <Field label="Deadline">
+                <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
+                  <Btn small kind="soft" icon="calendar-outline" label={draft.due_at ? fmtDate(draft.due_at) : 'Set a date'} onPress={() => pick('date')} />
+                  {draft.due_at && !draft.due_all_day ? <Btn small kind="soft" icon="time-outline" label={fmtTime(draft.due_at)} onPress={() => pick('time')} /> : null}
+                  {draft.due_at ? <Btn small kind="danger" icon="close" label="Clear" onPress={() => set({ due_at: null, due_all_day: false })} /> : null}
+                </View>
+                {draft.due_at ? (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: space.sm }}>
+                    <Txt variant="label" sub style={{ flex: 1 }}>All day, no set time</Txt>
+                    <Toggle label="All day" value={draft.due_all_day} onChange={setAllDay} />
                   </View>
-                ) : (
-                  <FileLine key={f.id} file={f} />
-                ),
-              )}
-              {m.transcript ? (
-                <View style={{ marginTop: 8, paddingLeft: 10, borderLeftWidth: 3, borderLeftColor: t.border }}>
-                  <Txt size={12} sub>ভয়েস থেকে লেখা (ভুল থাকতে পারে)</Txt>
-                  <Txt selectable>{m.transcript}</Txt>
-                </View>
-              ) : null}
-              {link ? (
-                <View style={{ alignItems: 'flex-start', marginTop: 10 }}>
-                  <Btn small kind="plain" icon="paper-plane-outline" label="Telegram-এ দেখুন" onPress={() => Linking.openURL(link)} />
-                </View>
-              ) : null}
-            </Card>
-          );
-        })}
+                ) : null}
+                {item.due_text ? (
+                  <View style={{ flexDirection: 'row', gap: 6, marginTop: space.sm, alignItems: 'flex-start' }}>
+                    <Ionicons name="chatbubble-ellipses-outline" size={14} color={t.faint} style={{ marginTop: 3 }} />
+                    <Txt variant="caption" sub style={{ flex: 1 }}>As written: <Txt variant="caption" content sub>“{item.due_text}”</Txt></Txt>
+                  </View>
+                ) : null}
+              </Field>
+            </>
+          ) : null}
+        </Card>
 
-        {events.length ? <SectionTitle>পরিবর্তনের ইতিহাস</SectionTitle> : null}
-        {events.map((e) => (
-          <View key={e.id} style={{ marginHorizontal: 4, marginBottom: 8 }}>
-            <Txt size={14}>{e.summary}</Txt>
-            <Txt size={12} sub>{e.actor === 'ai' ? 'বট' : 'আপনি'} · {fmtDateTime(e.created_at)}</Txt>
+        <Card style={{ gap: space.sm }}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Ionicons name="lock-closed" size={13} color={t.faint} />
+            <Txt variant="overline" sub>My private note</Txt>
           </View>
-        ))}
+          <TextInput value={draft.user_note ?? ''} onChangeText={(v) => set({ user_note: v || null })} multiline placeholder="Only you can see this" placeholderTextColor={t.faint} style={[input, { minHeight: 44, textAlignVertical: 'top' }]} />
+        </Card>
 
-        {!item.dismissed ? (
-          <View style={{ marginTop: 20, alignItems: 'flex-start' }}>
-            <Btn small kind="danger" icon="trash-outline" label="এই আইটেম বাদ দিন" onPress={() => setDismissed(true)} />
+        <View>
+          <SectionHeader title={messages.length > 1 ? 'Original messages' : 'Original message'} />
+          {!messages.length ? <Txt variant="label" sub style={{ paddingHorizontal: 2 }}>No message is linked to this item.</Txt> : null}
+          <View style={{ gap: space.md }}>
+            {messages.map((m) => {
+              const link = telegramLink(m.chat_id, m.tg_message_id);
+              const mr = role(m.sender_tg_id);
+              const mc = roleColors(t, mr);
+              return (
+                <Card key={m.id} style={{ gap: space.md, backgroundColor: mc.bg, borderColor: 'transparent' }} flat>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                    <Avatar role={mr} name={m.sender_name} size={26} solid />
+                    <Txt variant="label" content color={mc.fg} strong style={{ flex: 1 }} numberOfLines={1}>{m.sender_name ?? 'Unknown'}</Txt>
+                    <Txt variant="caption" color={mc.fg}>{fmtDateTime(m.sent_at)}{m.edited_at ? ' · edited' : ''}</Txt>
+                  </View>
+                  {m.text ? <Txt content selectable>{m.text}</Txt> : null}
+                  {m.files.map((f) =>
+                    fileGroup(f) === 'voice' && f.status === 'stored' && f.storage_path ? (
+                      <View key={f.id} style={{ backgroundColor: t.surface, borderRadius: radius.md, padding: space.md }}>
+                        <AudioPlayer storagePath={f.storage_path} duration={f.duration_seconds} />
+                      </View>
+                    ) : (
+                      <AttachmentRow key={f.id} file={f} />
+                    ),
+                  )}
+                  {m.transcript ? (
+                    <View style={{ gap: 2 }}>
+                      <Txt variant="caption" color={mc.fg}>Transcribed from voice, may contain mistakes</Txt>
+                      <Txt content selectable>{m.transcript}</Txt>
+                    </View>
+                  ) : null}
+                  {m.links.map((l) => {
+                    const { host, rest } = splitUrl(l.url, l.domain);
+                    return (
+                      <Pressable key={l.id} onPress={() => Linking.openURL(l.url)} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: t.surface, borderRadius: radius.md, padding: space.md }, pressed && styles.pressed]}>
+                        <Ionicons name="link" size={16} color={t.primary} />
+                        <Txt variant="label" color={t.primary} numberOfLines={1} style={{ flex: 1 }}>{host}{rest}</Txt>
+                        <Ionicons name="open-outline" size={15} color={t.primary} />
+                      </Pressable>
+                    );
+                  })}
+                  {link ? <Btn small kind="inverse" icon="paper-plane" label="Open in Telegram" onPress={() => Linking.openURL(link)} style={{ alignSelf: 'flex-start' }} /> : null}
+                </Card>
+              );
+            })}
+          </View>
+        </View>
+
+        {events.length ? (
+          <View>
+            <SectionHeader title="History" />
+            <Card style={{ gap: 0 }}>
+              {events.map((e, i) => (
+                <View key={e.id} style={{ flexDirection: 'row', gap: space.md }}>
+                  <View style={{ alignItems: 'center', width: 12 }}>
+                    <View style={{ width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: e.actor === 'ai' ? t.primary : t.meSolid }} />
+                    {i < events.length - 1 ? <View style={{ flex: 1, width: 2, backgroundColor: t.border, marginVertical: 2 }} /> : null}
+                  </View>
+                  <View style={{ flex: 1, paddingBottom: i < events.length - 1 ? space.md : 0 }}>
+                    <Txt variant="label" content>{e.summary}</Txt>
+                    <Txt variant="caption" sub>{e.actor === 'ai' ? 'Bot' : 'You'} · {fmtDateTime(e.created_at)}</Txt>
+                  </View>
+                </View>
+              ))}
+            </Card>
           </View>
         ) : null}
-        <Txt size={12} sub style={{ marginTop: 8, marginHorizontal: 4 }}>তৈরি: {fmtDateTime(item.created_at)}</Txt>
       </ScrollView>
+
+      {changed.length ? (
+        <View style={[{ position: 'absolute', left: 0, right: 0, bottom: 0, flexDirection: 'row', gap: space.md, padding: space.lg, paddingBottom: insets.bottom + space.lg, backgroundColor: t.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderWidth: 1, borderColor: t.border }, elevation(t, 2)]}>
+          <Btn kind="ghost" label="Discard" onPress={() => setDraft(draftOf(item))} disabled={saving} />
+          <Btn icon="checkmark" label={saving ? 'Saving…' : 'Save changes'} onPress={save} disabled={saving} style={{ flex: 1 }} />
+        </View>
+      ) : null}
     </KeyboardAvoidingView>
+  );
+}
+
+function Field({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <View style={{ gap: space.sm }}>
+      <Txt variant="overline" sub>{label}</Txt>
+      {children}
+    </View>
   );
 }
