@@ -58,12 +58,12 @@ async function run(): Promise<Record<string, number>> {
     const due = new Date(t.due_at).getTime();
     if (due > now.getTime() && due <= soon) {
       if (await firstTime(`due:${t.id}:${t.due_at}`)) {
-        await sendMessage(owner, `⏰ <b>ডেডলাইন কাছে</b>\n${escapeHtml(t.title)}\nসময়: ${fmtDue(t)}`);
+        await sendMessage(owner, `⏰ <b>Deadline approaching</b>\n${escapeHtml(t.title)}\nDue: ${fmtDue(t)}`);
         sent++;
       }
     } else if (due <= now.getTime() && due > now.getTime() - 86400_000) {
       if (await firstTime(`overdue:${t.id}:${t.due_at}`)) {
-        await sendMessage(owner, `🔴 <b>ডেডলাইন পেরিয়ে গেছে</b>\n${escapeHtml(t.title)}\nসময় ছিল: ${fmtDue(t)}`);
+        await sendMessage(owner, `🔴 <b>Deadline passed</b>\n${escapeHtml(t.title)}\nWas due: ${fmtDue(t)}`);
         sent++;
       }
     }
@@ -79,11 +79,11 @@ async function run(): Promise<Record<string, number>> {
     const { count: inbox } = await supabase.from("items")
       .select("id", { count: "exact", head: true }).eq("needs_review", true).eq("dismissed", false);
     const list = (ts: Task[]) => ts.slice(0, 15).map((t) => `• ${escapeHtml(t.title)} (${fmtDue(t)})`).join("\n");
-    const parts = [`☀️ <b>আজকের সারাংশ</b> — ${today}`];
-    if (overdue.length) parts.push(`🔴 <b>মেয়াদ পেরোনো (${overdue.length})</b>\n${list(overdue)}`);
-    if (dueToday.length) parts.push(`📌 <b>আজকের কাজ (${dueToday.length})</b>\n${list(dueToday)}`);
-    if (!overdue.length && !dueToday.length) parts.push("আজ কোনো ডেডলাইন নেই।");
-    parts.push(`মোট বাকি কাজ: ${tasks.length}${inbox ? ` · যাচাইয়ের অপেক্ষায়: ${inbox}` : ""}`);
+    const parts = [`☀️ <b>Today's summary</b> — ${today}`];
+    if (overdue.length) parts.push(`🔴 <b>Overdue (${overdue.length})</b>\n${list(overdue)}`);
+    if (dueToday.length) parts.push(`📌 <b>Due today (${dueToday.length})</b>\n${list(dueToday)}`);
+    if (!overdue.length && !dueToday.length) parts.push("No deadlines today.");
+    parts.push(`Open tasks: ${tasks.length}${inbox ? ` · Waiting for review: ${inbox}` : ""}`);
     await sendMessage(owner, parts.join("\n\n"));
     sent++;
   }
@@ -94,7 +94,7 @@ async function run(): Promise<Record<string, number>> {
   for (const f of failed ?? []) {
     if (await firstTime(`failed:${f.id}`)) {
       const link = messageLink(f.chat_id, f.tg_message_id);
-      await sendMessage(owner, `⚠️ একটি মেসেজ বিশ্লেষণ করা যায়নি। মূল মেসেজটি সংরক্ষিত আছে${link ? `: ${link}` : "।"}`);
+      await sendMessage(owner, `⚠️ One message could not be analysed. The original message is saved${link ? `: ${link}` : "."}`);
       sent++;
     }
   }

@@ -158,7 +158,7 @@ async function handlePrivate(m: TgMessage): Promise<void> {
   const supabase = db();
   const match = /^\/start login_([a-f0-9]{16,64})$/.exec(m.text ?? "");
   if (!match) {
-    await sendMessage(m.chat.id, "আমি গ্রুপের কাজের মেসেজ গুছিয়ে রাখি। লগইন করতে অ্যাপ থেকে “Telegram দিয়ে লগইন” চাপুন।");
+    await sendMessage(m.chat.id, "I organise the work messages from your group. To sign in, tap “Continue with Telegram” in the app.");
     return;
   }
 
@@ -174,7 +174,7 @@ async function handlePrivate(m: TgMessage): Promise<void> {
     else owner = (await ownerId());
   }
   if (owner !== m.from.id) {
-    await sendMessage(m.chat.id, "দুঃখিত, এই বটটি অন্য একজনের ব্যক্তিগত ব্যবহারের জন্য।");
+    await sendMessage(m.chat.id, "Sorry, this bot is for someone else's private use.");
     return;
   }
 
@@ -186,7 +186,7 @@ async function handlePrivate(m: TgMessage): Promise<void> {
   await sendMessage(
     m.chat.id,
     confirmed?.length
-      ? "✅ লগইন নিশ্চিত হয়েছে। এখন অ্যাপে ফিরে যান।"
-      : "এই লগইন লিংকের মেয়াদ শেষ। অ্যাপ থেকে আবার চেষ্টা করুন।",
+      ? "✅ Sign-in confirmed. You can go back to the app now."
+      : "This sign-in link has expired. Please try again from the app.",
   );
 }

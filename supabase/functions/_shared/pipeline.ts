@@ -211,7 +211,7 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
       }
       await supabase.from("item_events").insert({
         item_id: itemId, actor: "ai", message_id: source.id, changes,
-        summary: op.change_summary ?? "বসের নতুন মেসেজ অনুযায়ী আপডেট হয়েছে",
+        summary: op.change_summary ?? "Updated from a new message",
       });
     } else {
       // A create, or an update whose target could not be resolved: keep it rather than drop it.
@@ -239,7 +239,7 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
       if (insErr) throw insErr;
       itemId = ins.id;
       await supabase.from("item_events").insert({
-        item_id: itemId, actor: "ai", message_id: source.id, summary: "মেসেজ থেকে তৈরি হয়েছে",
+        item_id: itemId, actor: "ai", message_id: source.id, summary: "Created from a message",
       });
       created.push({ title: row.title, type: row.type, due: row.due_at, review });
     }
@@ -255,7 +255,7 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
       const due = c.due ? ` — ⏰ ${localStamp(new Date(c.due), timeZone).slice(0, 16)}` : "";
       return `${icon} ${escapeHtml(c.title)}${due}`;
     });
-    await sendMessage(ownerTgId, `<b>নতুন যোগ হয়েছে</b>\n${lines.join("\n")}`)
+    await sendMessage(ownerTgId, `<b>Newly added</b>\n${lines.join("\n")}`)
       .catch((e) => console.error("notify failed", e));
   }
 }

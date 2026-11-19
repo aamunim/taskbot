@@ -73,7 +73,7 @@ How to decide between create and update
 - If a new message changes, clarifies, extends, reschedules, cancels or completes an existing item, update that item (action "update", item_ref set) instead of creating a duplicate. A reply to an earlier message, or wording such as "that report" or "ওটা", usually points at an existing item.
 - A new message marked as edited replaces its earlier wording: update the items already linked to it.
 - If the owner clearly reports a task finished or started, update its status. If the boss cancels a task, set status "done" and say it was cancelled in change_summary.
-- For an update, set only the fields that change and leave every other field null. change_summary states in one short Bangla sentence what changed and why.
+- For an update, set only the fields that change and leave every other field null. change_summary states in one short English sentence what changed and why.
 - For a create, set type, title, priority and tags; change_summary is null.
 
 Field rules
