@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Pressable, RefreshControl, ScrollView, TextInput, View, useWindowDimensions } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { openGallery, type GalleryImage } from '@/components/Gallery';
 import { Appear } from '@/components/motion';
 import { DocTile, FileListRow, LinkCard, LinkRow, LinkTile, PhotoTile, VoiceCard, linkLabel } from '@/components/library';
@@ -9,6 +9,7 @@ import { Card, Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionG
 import * as api from '@/lib/api';
 import { useData } from '@/lib/data';
 import { dayHeading, fileExt, fileGroup, fileTitle, fmtDateTime, splitUrl } from '@/lib/format';
+import { useAppWidth } from '@/lib/layout';
 import { usePref } from '@/lib/prefs';
 import { ROLE_LABEL, matchesRole } from '@/lib/roles';
 import { content, noOutline, radius, space, useTheme } from '@/lib/theme';
@@ -37,7 +38,7 @@ const EMPTY: Record<Section, { icon: IconName; title: string }> = {
 
 export default function Library() {
   const t = useTheme();
-  const { width } = useWindowDimensions();
+  const width = useAppWidth();
   const { role, version } = useData();
   const [files, setFiles] = useState<LibFile[]>([]);
   const [links, setLinks] = useState<LibLink[]>([]);

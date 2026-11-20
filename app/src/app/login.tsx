@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as Linking from 'expo-linking';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, AppState, View } from 'react-native';
+import { ActivityIndicator, AppState, Platform, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Logo } from '@/components/Logo';
 import { Btn, Txt, type IconName } from '@/components/ui';
@@ -72,11 +72,15 @@ export default function Login() {
     if (DEMO) return demoSignIn();
     setBusy(true);
     setMessage(null);
+    // A browser only allows a new tab opened directly by the click, so open it before the request.
+    const tab = Platform.OS === 'web' ? window.open('', '_blank') : null;
     try {
       const p = await startLogin();
       setPending(p);
-      await Linking.openURL(p.url);
+      if (tab) tab.location.href = p.url;
+      else await Linking.openURL(p.url);
     } catch {
+      tab?.close();
       setMessage('Could not reach the server. Check your connection and try again.');
     } finally {
       setBusy(false);

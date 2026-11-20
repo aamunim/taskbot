@@ -42,7 +42,8 @@
       "expo-font"
     ],
     "experiments": {
-      "typedRoutes": false
+      "typedRoutes": false,
+      "baseUrl": "/taskbot"
     },
     "owner": "aamunim",
     "runtimeVersion": {

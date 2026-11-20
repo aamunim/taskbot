@@ -7,7 +7,22 @@ import { db, json, randomToken, recordError, sha256Hex, timingSafeEqual } from "
 //            and exchanges it for a Supabase session with auth.verifyOtp.
 // The code travels through Telegram; the secret never leaves the app, so seeing
 // the link is not enough to log in.
+// The web app calls this from a browser on another origin. Nothing here relies on
+// cookies, and a login still needs the one-time secret, so any origin may call it.
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS });
+  const res = await handle(req);
+  for (const [k, v] of Object.entries(CORS)) res.headers.set(k, v);
+  return res;
+});
+
+async function handle(req: Request): Promise<Response> {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
   let body: { action?: string; code?: string; secret?: string };
   try {
@@ -25,7 +40,7 @@ Deno.serve(async (req) => {
     await recordError("auth", e);
     return json({ error: "failed" }, 500);
   }
-});
+}
 
 async function start(): Promise<Response> {
   const supabase = db();

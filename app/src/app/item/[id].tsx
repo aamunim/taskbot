@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
 import * as Linking from 'expo-linking';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
+import { pickDateTime } from '@/lib/pick';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AudioPlayer } from '@/components/AudioPlayer';
 import { Checklist } from '@/components/Checklist';
@@ -113,12 +113,10 @@ export default function ItemDetail() {
   const set = (patch: Partial<Draft>) => setDraft({ ...draft, ...patch });
 
   const pick = (mode: 'date' | 'time') => {
-    if (Platform.OS !== 'android') return;
-    DateTimePickerAndroid.open({
+    pickDateTime({
       value: toPickerDate(draft.due_at),
       mode,
-      is24Hour: false,
-      onValueChange: (_event, date) => {
+      onChange: (date) => {
         if (mode === 'date') {
           if (draft.due_all_day || !draft.due_at) date.setHours(23, 59, 0, 0);
           set({ due_at: fromPickerDate(date), due_all_day: draft.due_at ? draft.due_all_day : true });

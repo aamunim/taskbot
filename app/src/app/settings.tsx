@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
-import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import { confirmAction } from '@/lib/dialog';
+import { pickDateTime } from '@/lib/pick';
 import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
-import { Alert, Platform, Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, View } from 'react-native';
 import { Avatar, Btn, Card, Chip, ErrorBanner, SectionHeader, Sheet, Skeleton, Toggle, TopBar, Txt, styles } from '@/components/ui';
 import * as api from '@/lib/api';
 import { useData } from '@/lib/data';
@@ -50,26 +51,20 @@ export default function SettingsScreen() {
   );
 
   const pickMorning = () => {
-    if (!cfg || Platform.OS !== 'android') return;
+    if (!cfg) return;
     const [h, m] = cfg.morning_time.split(':').map(Number);
     const value = new Date();
     value.setHours(h, m, 0, 0);
-    DateTimePickerAndroid.open({
+    pickDateTime({
       value,
       mode: 'time',
-      is24Hour: false,
-      onValueChange: (_e, d) =>
+      onChange: (d) =>
         saveConfig({ morning_time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00` }),
     });
   };
 
   const logout = () => {
-    // Alert has no buttons on web, where only the demo build runs.
-    if (Platform.OS === 'web') return signOut();
-    Alert.alert('Sign out', 'Do you want to sign out?', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Sign out', style: 'destructive', onPress: signOut },
-    ]);
+    confirmAction('Sign out', 'Do you want to sign out?', 'Sign out', signOut);
   };
 
   if (!cfg) {

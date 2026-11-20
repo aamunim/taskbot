@@ -56,6 +56,15 @@ GitHub-এ রিপোর **Settings → Secrets and variables → Actions → 
 
 নতুন নেটিভ মডিউল যোগ হলে `app.json`-এর `version` বাড়িয়ে নতুন APK বানাতে হবে; আপডেট শুধু একই `version`-এর APK-তে পৌঁছায়।
 
+### ওয়েব ভার্সন
+
+একই অ্যাপ ব্রাউজারেও চলে, GitHub Pages থেকে: `https://<আপনার-username>.github.io/taskbot/`
+
+1. একবার: রিপোর **Settings → Pages → Source**-এ "GitHub Actions" বেছে নিন।
+2. **Actions → Deploy web app → Run workflow**।
+
+লগইন অ্যাপের মতোই Telegram দিয়ে। ঠিকানাটা যে কেউ খুলতে পারে, কিন্তু লগইন ছাড়া কোনো ডেটা দেখা যায় না।
+
 ### ৪. প্রথমবার ব্যবহার
 
 1. অ্যাপে "Telegram দিয়ে লগইন" চাপুন, Telegram-এ বটের **Start** চাপুন, অ্যাপে ফিরুন। প্রথম যিনি লগইন করবেন তিনিই মালিক; পরে অন্য কেউ ঢুকতে পারবে না।

@@ -2,8 +2,9 @@ import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as Linking from 'expo-linking';
 import { useState } from 'react';
-import { Alert, Image, Pressable, Text, View } from 'react-native';
+import { Image, Pressable, Text, View } from 'react-native';
 import { signedUrl } from '@/lib/api';
+import { notify } from '@/lib/dialog';
 import { useData } from '@/lib/data';
 import { fileExt, fileGroup, fileStatusText, fileTitle, fmtDate, fmtDateTime, fmtSize, splitUrl } from '@/lib/format';
 import { tap } from '@/lib/haptics';
@@ -20,7 +21,7 @@ export async function openFile(f: Pick<FileRow, 'storage_path' | 'status'>) {
   if (f.status !== 'stored' || !f.storage_path) return;
   const url = await signedUrl(f.storage_path);
   if (url) await Linking.openURL(url);
-  else Alert.alert('Could not open file', 'Please try again in a moment.');
+  else notify('Could not open file', 'Please try again in a moment.');
 }
 
 const EXT_COLOR: Record<string, string> = {
@@ -349,7 +350,7 @@ export function LinkChip({ link }: { link: LinkRecord }) {
 export async function openAttachment(file: FileRow, meta: { sender: string | null; role: Role; sentAt: string }) {
   if (fileGroup(file) !== 'photo' || file.status !== 'stored' || !file.storage_path) return openFile(file);
   const uri = await signedUrl(file.storage_path);
-  if (!uri) return Alert.alert('Could not open photo', 'Please try again in a moment.');
+  if (!uri) return notify('Could not open photo', 'Please try again in a moment.');
   openGallery([{ key: file.id, uri, title: fileTitle(file), sender: meta.sender, role: meta.role, date: fmtDateTime(meta.sentAt) }]);
 }
 
