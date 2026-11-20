@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { setStatusBarStyle } from 'expo-status-bar';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NoteCard, TaskCard } from '@/components/items';
@@ -22,6 +23,14 @@ export default function Today() {
   const insets = useSafeAreaInsets();
   const { items, config, loading, error, refresh, updateItem, role } = useData();
   const [refreshing, setRefreshing] = useState(false);
+
+  // The header is dark in both themes, so the status bar icons must be light while this tab is showing.
+  useFocusEffect(
+    useCallback(() => {
+      setStatusBarStyle('light');
+      return () => setStatusBarStyle('auto');
+    }, []),
+  );
 
   const view = useMemo(() => {
     const today = todayNumber();
@@ -64,14 +73,14 @@ export default function Today() {
   const progress = view.dueTotal ? view.dueDone / view.dueTotal : 0;
 
   return (
-    <ScrollView
-      contentContainerStyle={{ paddingBottom: 120 }}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.primary} />}>
+    <View style={{ flex: 1 }}>
+      {/* Fixed header: stays put (and keeps the status bar clear) while the page scrolls under it.
+          Both gradient pieces run left to right, so the join with the scrolling part is invisible. */}
       <LinearGradient
         colors={t.hero}
         start={{ x: 0, y: 0 }}
-        end={{ x: 1, y: 1 }}
-        style={{ paddingTop: insets.top + space.xl, paddingHorizontal: space.xl, paddingBottom: space.xl, borderBottomLeftRadius: radius.xl, borderBottomRightRadius: radius.xl, gap: space.lg }}>
+        end={{ x: 1, y: 0 }}
+        style={{ paddingTop: insets.top + space.lg, paddingHorizontal: space.xl, paddingBottom: space.md, zIndex: 1 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
           <View style={{ flex: 1 }}>
             <Txt variant="overline" color="rgba(255,255,255,0.78)">{fmtLongDate(new Date())}</Txt>
@@ -80,7 +89,18 @@ export default function Today() {
           <IconBtn icon="search" label="Search" onPress={() => router.push('/search')} color="#FFFFFF" bg={GLASS} />
           <IconBtn icon="settings-outline" label="Settings" onPress={() => router.push('/settings')} color="#FFFFFF" bg={GLASS} />
         </View>
+      </LinearGradient>
 
+    <ScrollView
+      style={{ flex: 1 }}
+      contentContainerStyle={{ paddingBottom: 120 }}
+      overScrollMode="never"
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.primary} />}>
+      <LinearGradient
+        colors={t.hero}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 0 }}
+        style={{ paddingTop: space.sm, paddingHorizontal: space.xl, paddingBottom: space.xl, borderBottomLeftRadius: radius.xl, borderBottomRightRadius: radius.xl, gap: space.lg }}>
         <View style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
             {view.dueTotal ? (
@@ -154,6 +174,7 @@ export default function Today() {
         )}
       </View>
     </ScrollView>
+    </View>
   );
 }
 
