@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, RefreshControl, ScrollView, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NoteCard, StatusRing, TaskCard, openItem } from '@/components/items';
-import { Appear, reduceMotionNow } from '@/components/motion';
+import { Appear, ProgressRing, reduceMotionNow, useCountUp } from '@/components/motion';
 import { WeekChart } from '@/components/WeekChart';
 import { Avatar, Card, Empty, ErrorBanner, Header, IconBtn, RoleBadge, SectionHeader, Skeleton, Txt, styles, type IconName } from '@/components/ui';
 import { Page, Panel, Quiet } from '@/components/desktop';
@@ -16,6 +16,7 @@ import { PRIORITY_RANK, STATUS_LABEL, dayNumber, fmtLongDate, greeting, isOverdu
 import { success } from '@/lib/haptics';
 import { setPref } from '@/lib/prefs';
 import { roleColors } from '@/lib/roles';
+import { dayPart, dhakaHour, heroColors } from '@/lib/hero';
 import { lastWeek, streak } from '@/lib/stats';
 import { radius, space, ui, useTheme } from '@/lib/theme';
 import type { Item, Role, Status } from '@/lib/types';
@@ -81,6 +82,14 @@ export default function Today() {
     router.push('/tasks');
   };
 
+  // The header's colours follow the time of day; re-checked every few minutes while the app is open.
+  const [part, setPart] = useState(() => dayPart(dhakaHour()));
+  useEffect(() => {
+    const id = setInterval(() => setPart(dayPart(dhakaHour())), 5 * 60_000);
+    return () => clearInterval(id);
+  }, []);
+  const hero = useMemo(() => heroColors(t, part), [t, part]);
+
   const nothing = !view.overdue.length && !view.today.length && !view.week.length && !view.notes.length && !view.undated;
   const progress = view.dueTotal ? view.dueDone / view.dueTotal : 0;
   const allDone = view.dueTotal > 0 && view.dueDone === view.dueTotal && !view.overdue.length;
@@ -88,7 +97,7 @@ export default function Today() {
 
   const inboxBanner = view.inbox > 0 ? (
     <Card onPress={() => router.push('/inbox')} style={[{ flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: t.bossSoft, borderColor: 'transparent', marginBottom: desktop ? 0 : space.md }, desktop && { flex: 1 }]} flat>
-                <Ionicons name="help-buoy" size={22} color={t.boss} />
+                <Ionicons name="help-buoy-outline" size={22} color={t.boss} />
                 <View style={{ flex: 1 }}>
                   <Txt variant="body" strong color={t.boss}>{plural(view.inbox, 'item')} to review</Txt>
                   <Txt variant="caption" color={t.boss}>The AI was not sure about {view.inbox === 1 ? 'it' : 'these'}</Txt>
@@ -128,7 +137,7 @@ export default function Today() {
             <Card style={{ gap: space.lg }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
                 <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: view.streak ? t.bossSoft : t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="flame" size={24} color={view.streak ? t.bossSolid : t.faint} />
+                  <Ionicons name="flame-outline" size={24} color={view.streak ? t.bossSolid : t.faint} />
                 </View>
                 <View style={{ flex: 1 }}>
                   <Txt variant="heading">{view.streak ? `${view.streak}-day on-time streak` : 'No streak yet'}</Txt>
@@ -142,7 +151,7 @@ export default function Today() {
 
   if (desktop) {
     // Dashboard across the window: a summary strip, then columns of panels.
-    const tasks = (list: Item[]) => list.map((i) => <TaskCard key={i.id} item={i} onStatus={setStatus(i)} />);
+    const tasks = (list: Item[]) => list.map((i) => <TaskCard key={i.id} item={i} onStatus={setStatus(i)} leaveOnDone />);
     const first = (
       <>
         {view.overdue.length ? <Panel title="Overdue" count={view.overdue.length} color={t.danger}><List>{tasks(view.overdue)}</List></Panel> : null}
@@ -182,24 +191,11 @@ export default function Today() {
         <Header title="Today" subtitle={fmtLongDate(new Date())} />
         <Page contentStyle={{ gap: space.lg }}>
           <ErrorBanner text={error} />
-          <LinearGradient colors={t.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: radius.xl, paddingVertical: space.xl, paddingHorizontal: space.xxl, flexDirection: 'row', alignItems: 'center', gap: space.xxl }}>
-            <View style={{ flex: 1, minWidth: 0, gap: space.md }}>
+          <LinearGradient colors={hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: radius.xl, paddingVertical: space.xl, paddingHorizontal: space.xxl, flexDirection: 'row', alignItems: 'center', gap: space.xxl }}>
+            <HeroProgress done={view.dueDone} total={view.dueTotal} progress={progress} allDone={allDone} size={84} />
+            <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
               <Txt variant="display" color="#FFFFFF">{greeting()}</Txt>
-              <View style={{ gap: space.sm, maxWidth: 520 }}>
-                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-                  {view.dueTotal ? (
-                    <>
-                      <Txt variant="title" color="#FFFFFF">{view.dueDone} of {view.dueTotal}</Txt>
-                      <Txt variant="label" color="rgba(255,255,255,0.85)">due today done</Txt>
-                    </>
-                  ) : (
-                    <Txt variant="label" color="rgba(255,255,255,0.85)">Nothing is due today</Txt>
-                  )}
-                </View>
-                <View style={{ height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.22)' }}>
-                  <View style={{ height: 8, borderRadius: 4, backgroundColor: '#FFFFFF', width: `${Math.round(progress * 100)}%` }} />
-                </View>
-              </View>
+              <Txt variant="body" color="rgba(255,255,255,0.88)">{heroLine(view.dueDone, view.dueTotal, allDone)}</Txt>
             </View>
             <View style={{ flexDirection: 'row', gap: space.sm, width: three ? 480 : 390 }}>
               <Stat value={view.overdue.length} label="Overdue" alert={view.overdue.length > 0} />
@@ -212,12 +208,7 @@ export default function Today() {
             <Skeleton />
           ) : (
             <>
-              {inboxBanner || allDone ? (
-                <View style={{ flexDirection: 'row', gap: space.lg }}>
-                  {inboxBanner}
-                  {allDone ? <View style={{ flex: 1 }}><Celebration count={view.dueTotal} /></View> : null}
-                </View>
-              ) : null}
+              {inboxBanner ? <View style={{ flexDirection: 'row', gap: space.lg }}>{inboxBanner}</View> : null}
               {nothing ? <Empty icon="chatbubbles-outline" title="Nothing here yet" text="When your boss writes in the group, tasks and notes show up here on their own." /> : null}
               <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.lg }}>
                 <View style={col}>{first}{three ? null : second}</View>
@@ -236,7 +227,7 @@ export default function Today() {
       {/* Fixed header: stays put (and keeps the status bar clear) while the page scrolls under it.
           Both gradient pieces run left to right, so the join with the scrolling part is invisible. */}
       <LinearGradient
-        colors={t.hero}
+        colors={hero}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={{ paddingTop: insets.top + space.lg, paddingHorizontal: space.xl, paddingBottom: space.md, zIndex: 1 }}>
@@ -245,7 +236,7 @@ export default function Today() {
             <Txt variant="overline" color="rgba(255,255,255,0.78)">{fmtLongDate(new Date())}</Txt>
             <Txt variant="display" color="#FFFFFF">{greeting()}</Txt>
           </View>
-          <IconBtn icon="search" label="Search" onPress={() => router.push('/search')} color="#FFFFFF" bg={GLASS} />
+          <IconBtn icon="search-outline" label="Search" onPress={() => router.push('/search')} color="#FFFFFF" bg={GLASS} />
           <IconBtn icon="settings-outline" label="Settings" onPress={() => router.push('/settings')} color="#FFFFFF" bg={GLASS} />
         </View>
       </LinearGradient>
@@ -254,25 +245,17 @@ export default function Today() {
       style={{ flex: 1 }}
       contentContainerStyle={{ paddingBottom: 120 }}
       overScrollMode="never"
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.primary} />}>
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={t.primary} colors={[t.primaryBg, t.bossSolid, t.meSolid]} progressBackgroundColor={t.raised} />}>
       <LinearGradient
-        colors={t.hero}
+        colors={hero}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 0 }}
         style={{ paddingTop: space.sm, paddingHorizontal: space.xl, paddingBottom: space.xl, borderBottomLeftRadius: radius.xl, borderBottomRightRadius: radius.xl, gap: space.lg }}>
-        <View style={{ gap: space.sm }}>
-          <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-            {view.dueTotal ? (
-              <>
-                <Txt variant="title" color="#FFFFFF">{view.dueDone} of {view.dueTotal}</Txt>
-                <Txt variant="label" color="rgba(255,255,255,0.85)">due today done</Txt>
-              </>
-            ) : (
-              <Txt variant="label" color="rgba(255,255,255,0.85)">Nothing is due today</Txt>
-            )}
-          </View>
-          <View style={{ height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.22)' }}>
-            <View style={{ height: 8, borderRadius: 4, backgroundColor: '#FFFFFF', width: `${Math.round(progress * 100)}%` }} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg }}>
+          <HeroProgress done={view.dueDone} total={view.dueTotal} progress={progress} allDone={allDone} size={76} />
+          <View style={{ flex: 1, gap: 2 }}>
+            <Txt variant="heading" color="#FFFFFF">{view.dueTotal ? (allDone ? 'All done for today' : `${view.dueTotal - view.dueDone} left today`) : 'A clear day'}</Txt>
+            <Txt variant="label" color="rgba(255,255,255,0.88)">{heroLine(view.dueDone, view.dueTotal, allDone)}</Txt>
           </View>
         </View>
 
@@ -291,8 +274,6 @@ export default function Today() {
           <>
             {inboxBanner}
 
-            {allDone ? <Celebration count={view.dueTotal} /> : null}
-
             <View style={{ flexDirection: 'row', gap: space.md }}>
               <SplitCard role="boss" title="From boss" name={config?.boss_name ?? null} counts={view.boss} onPress={() => openTasks('boss')} />
               <SplitCard role="me" title="My own" name={null} counts={view.me} onPress={() => openTasks('me')} />
@@ -305,11 +286,11 @@ export default function Today() {
             </View>
 
             {view.overdue.length ? <SectionHeader title="Overdue" count={view.overdue.length} color={t.danger} /> : null}
-            <List>{view.overdue.map((i, k) => <Appear key={i.id} index={k}><TaskCard item={i} onStatus={setStatus(i)} /></Appear>)}</List>
+            <List>{view.overdue.map((i, k) => <Appear key={i.id} index={k}><TaskCard item={i} onStatus={setStatus(i)} leaveOnDone /></Appear>)}</List>
 
             <SectionHeader title="Today" count={view.today.length || undefined} />
             {view.today.length ? (
-              <List>{view.today.map((i, k) => <Appear key={i.id} index={k + view.overdue.length}><TaskCard item={i} onStatus={setStatus(i)} /></Appear>)}</List>
+              <List>{view.today.map((i, k) => <Appear key={i.id} index={k + view.overdue.length}><TaskCard item={i} onStatus={setStatus(i)} leaveOnDone /></Appear>)}</List>
             ) : (
               <Txt variant="label" sub style={{ paddingHorizontal: 2 }}>{view.dueTotal ? 'Everything due today is done.' : 'No deadlines today.'}</Txt>
             )}
@@ -322,7 +303,7 @@ export default function Today() {
             ) : null}
 
             {view.week.length ? <SectionHeader title="Next 7 days" count={view.week.length} /> : null}
-            <List>{view.week.map((i) => <TaskCard key={i.id} item={i} onStatus={setStatus(i)} />)}</List>
+            <List>{view.week.map((i) => <TaskCard key={i.id} item={i} onStatus={setStatus(i)} leaveOnDone />)}</List>
 
             {view.undated > 0 ? (
               <Pressable onPress={() => router.push('/tasks')} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.lg, paddingHorizontal: 2 }, pressed && styles.pressed]}>
@@ -362,49 +343,64 @@ function Shortcut({ icon, label, onPress }: { icon: IconName; label: string; onP
 }
 
 const SPARKS = [
-  { x: -30, y: -22 }, { x: 26, y: -28 }, { x: 38, y: 4 }, { x: -40, y: 6 }, { x: -14, y: -36 }, { x: 12, y: 30 }, { x: -24, y: 26 }, { x: 34, y: 24 },
+  { x: -46, y: -34 }, { x: 40, y: -42 }, { x: 56, y: 6 }, { x: -58, y: 8 }, { x: -20, y: -56 }, { x: 18, y: 52 }, { x: -38, y: 42 }, { x: 50, y: 38 },
 ];
 
-/** Shown once everything due today is handled: a trophy that pops while a few sparks fly out. */
-function Celebration({ count }: { count: number }) {
-  const t = useTheme();
-  const pop = useRef(new Animated.Value(reduceMotionNow() ? 1 : 0)).current;
-  const burst = useRef(new Animated.Value(reduceMotionNow() ? 1 : 0)).current;
+const heroLine = (done: number, total: number, allDone: boolean) =>
+  !total ? 'Nothing is due today.' : allDone ? `${total === 1 ? 'The one task' : `All ${total} tasks`} due today ${total === 1 ? 'is' : 'are'} handled.` : `${done} of ${total} due today done`;
+
+/** The ring in the header: how much of today's work is handled, with a small flourish when it is all done. */
+function HeroProgress({ done, total, progress, allDone, size }: { done: number; total: number; progress: number; allDone: boolean; size: number }) {
+  const shown = useCountUp(done);
+  const pop = useRef(new Animated.Value(1)).current;
+  const glow = useRef(new Animated.Value(0)).current;
+  const was = useRef(allDone);
   useEffect(() => {
-    if (reduceMotionNow()) return;
+    const before = was.current;
+    was.current = allDone;
+    if (!allDone || before || reduceMotionNow()) return;
     success();
+    pop.setValue(0.6);
+    glow.setValue(0);
     Animated.parallel([
-      Animated.spring(pop, { toValue: 1, friction: 4, tension: 160, useNativeDriver: true }),
-      Animated.timing(burst, { toValue: 1, duration: 700, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
+      Animated.spring(pop, { toValue: 1, friction: 4, tension: 150, useNativeDriver: true }),
+      Animated.timing(glow, { toValue: 1, duration: 900, easing: Easing.out(Easing.cubic), useNativeDriver: true }),
     ]).start();
-  }, [pop, burst]);
-  const colors = [t.bossSolid, t.meSolid, t.primaryBg, t.success];
+  }, [allDone, pop, glow]);
   return (
-    <Card flat style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: t.successSoft, borderColor: 'transparent', marginBottom: space.md, overflow: 'hidden' }}>
-      <View style={{ width: 48, height: 48, alignItems: 'center', justifyContent: 'center' }}>
-        {SPARKS.map((p, i) => (
-          <Animated.View
-            key={i}
-            style={{ position: 'absolute', width: 6, height: 6, borderRadius: 3, backgroundColor: colors[i % colors.length], opacity: burst.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 1, 0] }), transform: [{ translateX: burst.interpolate({ inputRange: [0, 1], outputRange: [0, p.x] }) }, { translateY: burst.interpolate({ inputRange: [0, 1], outputRange: [0, p.y] }) }] }}
-          />
-        ))}
-        <Animated.View style={{ transform: [{ scale: pop }] }}>
-          <Ionicons name="trophy" size={30} color={t.success} />
+    <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}>
+      <Animated.View
+        pointerEvents="none"
+        style={{ position: 'absolute', width: size, height: size, borderRadius: size / 2, borderWidth: 2, borderColor: '#FFFFFF', opacity: glow.interpolate({ inputRange: [0, 0.2, 1], outputRange: [0, 0.6, 0] }), transform: [{ scale: glow.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] }) }] }}
+      />
+      {SPARKS.map((p, i) => (
+        <Animated.View
+          key={i}
+          pointerEvents="none"
+          style={{ position: 'absolute', width: 6, height: 6, borderRadius: 3, backgroundColor: i % 2 ? '#FDE68A' : '#FFFFFF', opacity: glow.interpolate({ inputRange: [0, 0.15, 1], outputRange: [0, 1, 0] }), transform: [{ translateX: glow.interpolate({ inputRange: [0, 1], outputRange: [0, p.x] }) }, { translateY: glow.interpolate({ inputRange: [0, 1], outputRange: [0, p.y] }) }] }}
+        />
+      ))}
+      <ProgressRing size={size} stroke={Math.round(size * 0.1)} progress={total ? progress : 0} color="#FFFFFF" track="rgba(255,255,255,0.22)">
+        <Animated.View style={{ alignItems: 'center', transform: [{ scale: pop }] }}>
+          {allDone ? (
+            <Ionicons name="checkmark" size={Math.round(size * 0.42)} color="#FFFFFF" />
+          ) : total ? (
+            <Txt variant="heading" color="#FFFFFF" style={{ fontFamily: ui.extrabold }}>{shown}/{total}</Txt>
+          ) : (
+            <Ionicons name="sunny-outline" size={Math.round(size * 0.36)} color="#FFFFFF" />
+          )}
         </Animated.View>
-      </View>
-      <View style={{ flex: 1 }}>
-        <Txt variant="body" strong color={t.success}>All done for today</Txt>
-        <Txt variant="caption" color={t.success}>{count === 1 ? 'The one task due today is handled.' : `All ${count} tasks due today are handled.`}</Txt>
-      </View>
-    </Card>
+      </ProgressRing>
+    </View>
   );
 }
 
 function Stat({ value, label, alert }: { value: number; label: string; alert?: boolean }) {
+  const shown = useCountUp(value);
   return (
     <View style={{ flex: 1, backgroundColor: GLASS, borderRadius: radius.md, paddingVertical: space.md, paddingHorizontal: space.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-        <Txt variant="title" color="#FFFFFF">{value}</Txt>
+        <Txt variant="title" color="#FFFFFF">{shown}</Txt>
         {alert ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: '#FDA4AF' }} /> : null}
       </View>
       <Txt variant="caption" color="rgba(255,255,255,0.85)" style={{ fontFamily: ui.semibold }}>{label}</Txt>
@@ -415,6 +411,7 @@ function Stat({ value, label, alert }: { value: number; label: string; alert?: b
 function SplitCard({ role, title, name, counts, onPress }: { role: Role; title: string; name: string | null; counts: { tasks: number; notes: number }; onPress: () => void }) {
   const t = useTheme();
   const c = roleColors(t, role);
+  const shown = useCountUp(counts.tasks);
   return (
     <Card onPress={onPress} style={{ flex: 1, gap: space.sm, padding: space.md + 2 }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
@@ -425,7 +422,7 @@ function SplitCard({ role, title, name, counts, onPress }: { role: Role; title: 
         </View>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
-        <Txt variant="display">{counts.tasks}</Txt>
+        <Txt variant="display">{shown}</Txt>
         <Txt variant="label" sub>open {counts.tasks === 1 ? 'task' : 'tasks'}</Txt>
       </View>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>

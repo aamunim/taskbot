@@ -107,7 +107,7 @@ export function MonthCalendar({ tasks, month, onMonth, selected, onSelect }: {
                 <View style={{ position: 'absolute', bottom: 0, flexDirection: 'row', gap: 3, height: 6 }}>
                   {info ? ROLE_ORDER.filter((r) => info.roles.has(r)).map((r) => <View key={r} style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: roleColors(t, r).solid }} />) : null}
                 </View>
-                {info?.late ? <Ionicons name="alert-circle" size={11} color={t.dangerSolid} style={{ position: 'absolute', top: 2, right: '14%' }} /> : null}
+                {info?.late ? <Ionicons name="alert-circle-outline" size={11} color={t.dangerSolid} style={{ position: 'absolute', top: 2, right: '14%' }} /> : null}
               </Pressable>
             );
           })}
@@ -119,7 +119,7 @@ export function MonthCalendar({ tasks, month, onMonth, selected, onSelect }: {
         <Legend color={t.meSolid} label="Me" />
         <Legend color={t.faint} label="Other" />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-          <Ionicons name="alert-circle" size={11} color={t.dangerSolid} />
+          <Ionicons name="alert-circle-outline" size={11} color={t.dangerSolid} />
           <Txt variant="caption" sub>Overdue</Txt>
         </View>
       </View>

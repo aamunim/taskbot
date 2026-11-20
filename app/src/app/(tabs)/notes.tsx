@@ -123,7 +123,7 @@ export default function Notes() {
         contentContainerStyle={[styles.list, { paddingHorizontal: 0 }]}
         refreshControl={
           <RefreshControl
-            tintColor={t.primary}
+            tintColor={t.primary} colors={[t.primaryBg, t.bossSolid, t.meSolid]} progressBackgroundColor={t.raised}
             refreshing={refreshing}
             onRefresh={async () => {
               setRefreshing(true);

@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useLayout } from '@/lib/layout';
+import { AnimatedPressable, usePressScale } from './motion';
 import { ROLE_LABEL, roleColors } from '@/lib/roles';
 import { content, elevation, noOutline, radius, space, ui, useTheme } from '@/lib/theme';
 import type { Role, RoleFilter } from '@/lib/types';
@@ -75,13 +76,22 @@ export function Card({ children, style, onPress, onLongPress, flat, selected }: 
   selected?: boolean;
 }) {
   const t = useTheme();
+  const press = usePressScale(0.975);
+  const [hovered, setHovered] = useState(false);
   const base: StyleProp<ViewStyle> = [styles.card, { backgroundColor: t.surface, borderColor: t.border }, !flat && elevation(t), style];
   const ring = selected ? ({ boxShadow: `0 0 0 2px ${t.primary}` } as object) : null;
   if (!onPress) return <View style={[base, ring]}>{children}</View>;
+  // Presses in slightly under the finger; on a desktop it lifts when the pointer is over it.
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} style={(s) => [base, isHovered(s) && !flat && [elevation(t, 2), { borderColor: t.faint }], ring, s.pressed && styles.pressed]}>
+    <AnimatedPressable
+      onPress={onPress}
+      onLongPress={onLongPress}
+      {...press.handlers}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
+      style={[base, hovered && !flat && [elevation(t, 2), { borderColor: t.faint }], ring, { transform: [{ scale: press.scale }] }]}>
       {children}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -145,18 +155,23 @@ export function Chip({ label, active, onPress, icon, count, content: isContent, 
 }) {
   const t = useTheme();
   const fg = active ? t.onPrimary : t.text;
+  const press = usePressScale(0.94);
+  const [hovered, setHovered] = useState(false);
   return (
-    <Pressable
+    <AnimatedPressable
       onPress={onPress}
       disabled={!onPress}
+      {...press.handlers}
+      onHoverIn={() => setHovered(true)}
+      onHoverOut={() => setHovered(false)}
       accessibilityRole="button"
       accessibilityState={{ selected: !!active }}
-      style={(s) => [styles.chip, { backgroundColor: active ? t.primaryBg : isHovered(s) ? t.surfaceAlt : t.surface, borderColor: active ? t.primaryBg : t.border }, s.pressed && styles.pressed]}>
+      style={[styles.chip, { backgroundColor: active ? t.primaryBg : hovered ? t.surfaceAlt : t.surface, borderColor: active ? t.primaryBg : t.border, transform: [{ scale: press.scale }] }]}>
       {dot ? <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: dot, borderWidth: 1.5, borderColor: active ? t.onPrimary : 'transparent' }} /> : null}
       {icon ? <Ionicons name={icon} size={15} color={active ? t.onPrimary : t.sub} /> : null}
       <Txt variant="label" content={isContent} color={fg}>{label}</Txt>
       {count != null ? <Txt variant="caption" color={active ? t.onPrimary : t.faint}>{count}</Txt> : null}
-    </Pressable>
+    </AnimatedPressable>
   );
 }
 
@@ -266,7 +281,7 @@ export function SearchField({ width = 250 }: { width?: number }) {
   };
   return (
     <View style={{ width, flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: t.surface, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.md }}>
-      <Ionicons name="search" size={16} color={t.faint} />
+      <Ionicons name="search-outline" size={16} color={t.faint} />
       <TextInput
         value={q}
         onChangeText={setQ}
@@ -349,7 +364,7 @@ export function GlobalActions() {
   if (desktop) return null;
   return (
     <View style={{ flexDirection: 'row', gap: space.sm }}>
-      <IconBtn icon="search" label="Search" onPress={() => router.push('/search')} bg={t.surface} />
+      <IconBtn icon="search-outline" label="Search" onPress={() => router.push('/search')} bg={t.surface} />
       <IconBtn icon="settings-outline" label="Settings" onPress={() => router.push('/settings')} bg={t.surface} />
     </View>
   );
@@ -389,7 +404,7 @@ export function ErrorBanner({ text }: { text: string | null }) {
   if (!text) return null;
   return (
     <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: t.dangerSoft, padding: space.md, borderRadius: radius.md, marginBottom: space.md }}>
-      <Ionicons name="alert-circle" size={18} color={t.danger} />
+      <Ionicons name="alert-circle-outline" size={18} color={t.danger} />
       <Txt variant="label" color={t.danger} style={{ flex: 1 }}>Something went wrong: {text}</Txt>
     </View>
   );
@@ -430,7 +445,7 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
       <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xxl }}>
           <Pressable accessibilityLabel="Close" onPress={onClose} style={[StyleSheet.absoluteFill, { backgroundColor: t.overlay }, { cursor: 'default' } as object]} />
-          <View style={[{ width: '100%', maxWidth: 520, maxHeight: '86%', backgroundColor: t.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: t.border, paddingVertical: space.xl }, elevation(t, 2)]} accessibilityRole={'dialog' as never}>
+          <View style={[{ width: '100%', maxWidth: 520, maxHeight: '86%', backgroundColor: t.raised, borderRadius: radius.xl, borderWidth: 1, borderColor: t.border, paddingVertical: space.xl }, elevation(t, 2)]} accessibilityRole={'dialog' as never}>
             <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.xxl, marginBottom: space.sm }}>
               <Txt variant="title" style={{ flex: 1 }}>{title}</Txt>
               <IconBtn icon="close" label="Close" onPress={onClose} size={36} />
@@ -445,7 +460,7 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>
         <Pressable accessibilityLabel="Close" onPress={onClose} style={[StyleSheet.absoluteFill, { backgroundColor: t.overlay }]} />
-        <View style={{ backgroundColor: t.surface, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, paddingTop: space.md, paddingBottom: insets.bottom + space.xl, maxHeight: '82%' }}>
+        <View style={{ backgroundColor: t.raised, borderTopLeftRadius: radius.xl, borderTopRightRadius: radius.xl, borderTopWidth: t.dark ? 1 : 0, borderColor: t.edge, paddingTop: space.md, paddingBottom: insets.bottom + space.xl, maxHeight: '82%' }}>
           <View style={{ alignSelf: 'center', width: 40, height: 4, borderRadius: 2, backgroundColor: t.border, marginBottom: space.md }} />
           <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.xl, marginBottom: space.sm }}>
             <Txt variant="title" style={{ flex: 1 }}>{title}</Txt>

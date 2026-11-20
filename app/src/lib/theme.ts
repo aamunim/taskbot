@@ -29,7 +29,16 @@ export type TextSize = 'small' | 'default' | 'large';
 export const PREF_ACCENT = 'theme:accent';
 export const PREF_APPEARANCE = 'theme:appearance';
 export const PREF_TEXT_SIZE = 'theme:textSize';
-export const THEME_PREF_KEYS = [PREF_ACCENT, PREF_APPEARANCE, PREF_TEXT_SIZE];
+export const PREF_DENSITY = 'theme:density';
+export const THEME_PREF_KEYS = [PREF_ACCENT, PREF_APPEARANCE, PREF_TEXT_SIZE, PREF_DENSITY];
+
+/** How much room a task takes in a list: a full card, or one line. */
+export type Density = 'comfortable' | 'compact';
+export const DENSITIES: { value: Density; label: string }[] = [
+  { value: 'comfortable', label: 'Comfortable' },
+  { value: 'compact', label: 'Compact' },
+];
+export const useDensity = (): Density => usePref<Density>(PREF_DENSITY, 'comfortable')[0];
 
 export const ACCENTS: { value: Accent; label: string; swatch: string }[] = [
   { value: 'indigo', label: 'Indigo', swatch: '#4338CA' },
@@ -59,6 +68,8 @@ const lightBase = {
   faint: '#8B88A3',
   surface: '#FFFFFF',
   onPrimary: '#FFFFFF',
+  /** Top edge of a card: a faint highlight in dark modes, where shadows cannot be seen. */
+  edge: 'transparent',
   boss: '#A64B05',
   bossSolid: '#F59E0B',
   bossSoft: '#FDEFD6',
@@ -80,6 +91,7 @@ const darkBase: typeof lightBase = {
   faint: '#807D9C',
   surface: '#19172D',
   onPrimary: '#FFFFFF',
+  edge: 'rgba(255, 255, 255, 0.09)',
   boss: '#FBBF4A',
   bossSolid: '#F59E0B',
   bossSoft: '#3A2A0E',
@@ -92,12 +104,14 @@ const darkBase: typeof lightBase = {
   success: '#6EDC96',
   successSoft: '#12351F',
   star: '#F5C445',
-  overlay: 'rgba(0, 0, 0, 0.6)',
+  overlay: 'rgba(0, 0, 0, 0.68)',
 };
 
 type Tint = {
   bg: string;
   surface: string;
+  /** Things that float above cards: sheets, dialogs, the tab bar, toasts. */
+  raised: string;
   surfaceAlt: string;
   border: string;
   primary: string;
@@ -109,21 +123,21 @@ type Tint = {
 
 const TINTS: Record<Accent, { light: Tint; dark: Tint }> = {
   indigo: {
-    light: { bg: '#F4F3FA', surface: '#FFFFFF', surfaceAlt: '#ECEAF6', border: '#E3E1EF', primary: '#4338CA', primaryBg: '#4338CA', primarySoft: '#E8E6FB', shadow: '#2A2466', hero: ['#2E2A86', '#4A3FDB', '#7B4BE8'] },
-    dark: { bg: '#0E0D1A', surface: '#19172D', surfaceAlt: '#24213F', border: '#2E2B4B', primary: '#AFB8FF', primaryBg: '#5548E6', primarySoft: '#27244F', shadow: '#000000', hero: ['#1F1B5E', '#3B31B8', '#6B3FD0'] },
+    light: { bg: '#F4F3FA', surface: '#FFFFFF', raised: '#FFFFFF', surfaceAlt: '#ECEAF6', border: '#E3E1EF', primary: '#4338CA', primaryBg: '#4338CA', primarySoft: '#E8E6FB', shadow: '#2A2466', hero: ['#2E2A86', '#4A3FDB', '#7B4BE8'] },
+    dark: { bg: '#0B0A16', surface: '#1A1831', raised: '#24213F', surfaceAlt: '#2A2749', border: '#3A3760', primary: '#AFB8FF', primaryBg: '#5548E6', primarySoft: '#27244F', shadow: '#000000', hero: ['#1F1B5E', '#3B31B8', '#6B3FD0'] },
   },
   ocean: {
-    light: { bg: '#F1F5FB', surface: '#FFFFFF', surfaceAlt: '#E6EDF8', border: '#DCE4F1', primary: '#1D4ED8', primaryBg: '#1D4ED8', primarySoft: '#E0EAFF', shadow: '#16306B', hero: ['#1B3A8C', '#2563EB', '#3B9BF2'] },
-    dark: { bg: '#0A1020', surface: '#131B31', surfaceAlt: '#1D2742', border: '#273250', primary: '#9CC2FF', primaryBg: '#2F6BEB', primarySoft: '#17294F', shadow: '#000000', hero: ['#12255C', '#1D4ED8', '#2B86DE'] },
+    light: { bg: '#F1F5FB', surface: '#FFFFFF', raised: '#FFFFFF', surfaceAlt: '#E6EDF8', border: '#DCE4F1', primary: '#1D4ED8', primaryBg: '#1D4ED8', primarySoft: '#E0EAFF', shadow: '#16306B', hero: ['#1B3A8C', '#2563EB', '#3B9BF2'] },
+    dark: { bg: '#070C19', surface: '#141C33', raised: '#1D2742', surfaceAlt: '#232E4C', border: '#33405F', primary: '#9CC2FF', primaryBg: '#2F6BEB', primarySoft: '#17294F', shadow: '#000000', hero: ['#12255C', '#1D4ED8', '#2B86DE'] },
   },
   forest: {
-    light: { bg: '#F2F6F2', surface: '#FFFFFF', surfaceAlt: '#E6EFE7', border: '#DAE5DC', primary: '#1E7A34', primaryBg: '#1E7A34', primarySoft: '#E0F2E3', shadow: '#17402A', hero: ['#14532D', '#1E7A34', '#43A655'] },
-    dark: { bg: '#0B130E', surface: '#141F18', surfaceAlt: '#1E2D24', border: '#29392E', primary: '#8BE0A3', primaryBg: '#2A8F45', primarySoft: '#143220', shadow: '#000000', hero: ['#0E3B20', '#1E7A34', '#2F9A4A'] },
+    light: { bg: '#F2F6F2', surface: '#FFFFFF', raised: '#FFFFFF', surfaceAlt: '#E6EFE7', border: '#DAE5DC', primary: '#1E7A34', primaryBg: '#1E7A34', primarySoft: '#E0F2E3', shadow: '#17402A', hero: ['#14532D', '#1E7A34', '#43A655'] },
+    dark: { bg: '#070E0A', surface: '#15211A', raised: '#1E2D24', surfaceAlt: '#24352A', border: '#34483A', primary: '#8BE0A3', primaryBg: '#2A8F45', primarySoft: '#143220', shadow: '#000000', hero: ['#0E3B20', '#1E7A34', '#2F9A4A'] },
   },
 };
 
 /** True black for OLED screens: the accent's dark colours on black surfaces. */
-const BLACK = { bg: '#000000', surface: '#0E0E13', surfaceAlt: '#1A1A22', border: '#26262F' };
+const BLACK = { bg: '#000000', surface: '#111116', raised: '#1B1B22', surfaceAlt: '#202029', border: '#32323D' };
 
 function build(accent: Accent, appearance: Exclude<Appearance, 'system'>, scale: number) {
   const dark = appearance !== 'light';
@@ -144,15 +158,21 @@ export function useTheme(): Theme {
   );
 }
 
-/** Soft card elevation; borders carry the edge in dark mode where shadows vanish. */
+/**
+ * Soft card elevation. In dark modes a shadow cannot be seen against the
+ * background, so depth comes from the layered surface shades, a visible
+ * hairline and a faint highlight along the top edge instead.
+ */
 export const elevation = (t: Theme, level: 1 | 2 = 1) =>
-  ({
-    shadowColor: t.shadow,
-    shadowOpacity: t.dark ? 0 : level === 1 ? 0.06 : 0.12,
-    shadowRadius: level === 1 ? 10 : 20,
-    shadowOffset: { width: 0, height: level === 1 ? 3 : 8 },
-    elevation: t.dark ? 0 : level === 1 ? 2 : 6,
-  }) as const;
+  t.dark
+    ? ({ shadowOpacity: 0, elevation: 0, borderWidth: 1, borderColor: t.border, borderTopColor: t.edge } as const)
+    : ({
+        shadowColor: t.shadow,
+        shadowOpacity: level === 1 ? 0.06 : 0.12,
+        shadowRadius: level === 1 ? 10 : 20,
+        shadowOffset: { width: 0, height: level === 1 ? 3 : 8 },
+        elevation: level === 1 ? 2 : 6,
+      } as const);
 
 export const SPLASH_BG = { light: '#3B32C4', dark: '#0E0D1A' } as const;
 

@@ -126,6 +126,7 @@ const item = (s: Seed, createdHoursAgo: number): Item => ({
   source_sender_name: nameOf(s.by),
   completed_at: s.status === 'done' ? ago(3) : null,
   waiting_since: s.status === 'waiting' ? ago(52) : null,
+  remind_at: null,
   created_at: ago(createdHoursAgo),
   updated_at: ago(createdHoursAgo),
   has_files: false,
@@ -145,7 +146,7 @@ let items: Item[] = [
   item({ id: 't4', type: 'task', by: ME, title: 'অফিসের ইন্টারনেট বিল জমা দেওয়া', due_at: endOfDay(0), due_all_day: true, tags: ['office'], status: 'done' }, 30),
   item({ id: 't5', type: 'task', by: BOSS, title: 'নতুন ইন্টার্নদের জন্য অনবোর্ডিং ডকুমেন্ট তৈরি', details: 'প্রথম সপ্তাহের সময়সূচি, টুলের তালিকা এবং যোগাযোগের নম্বর থাকবে।', due_at: endOfDay(2), due_all_day: true, due_text: 'বৃহস্পতিবারের মধ্যে', tags: ['hr'], has_files: true }, 40),
   item({ id: 't6', type: 'task', by: ME, title: 'ব্যানার ডিজাইনের সংশোধিত কপি স্যারকে পাঠাব', due_at: ahead(26), tags: ['design'], priority: 'high' }, 6),
-  item({ id: 't7', type: 'task', by: BOSS, title: 'সোমবারের মিটিংয়ের এজেন্ডা সবাইকে পাঠানো', due_at: endOfDay(4), due_all_day: true, tags: ['meeting'] }, 12),
+  item({ id: 't7', type: 'task', by: BOSS, title: 'সোমবারের মিটিংয়ের এজেন্ডা সবাইকে পাঠানো', remind_at: ahead(20), due_at: endOfDay(4), due_all_day: true, tags: ['meeting'] }, 12),
   item({ id: 't8', type: 'task', by: BOSS, title: 'ওয়েবসাইটের যোগাযোগ পাতার ফোন নম্বর আপডেট', priority: 'low', tags: ['website'] }, 70),
   item({ id: 't9', type: 'task', by: BOSS, title: 'চালান #২০৪৫ ক্লায়েন্টকে ইমেইল করা', status: 'done', tags: ['client', 'invoice'] }, 52),
   item({ id: 't10', type: 'task', by: ME, title: 'প্রিন্টারের টোনার অর্ডার করা', status: 'doing', tags: ['office'] }, 50),
@@ -202,9 +203,9 @@ let files: LibFile[] = [
   file('f5', BOSS, 49, { kind: 'photo', file_name: 'site-visit.jpg', mime_type: 'image/jpeg', size_bytes: 2_100_000, storage_path: 'demo/site.jpg' }),
   file('f6', OTHER, 75, { kind: 'photo', file_name: 'notice.jpg', mime_type: 'image/jpeg', size_bytes: 360_000, storage_path: 'demo/note.jpg' }),
   file('d1', BOSS, 20, { kind: 'document', file_name: 'অক্টোবর_বিক্রয়.xlsx', mime_type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', size_bytes: 96_000, storage_path: 'demo/sales.xlsx', item_id: 't2', starred: true }),
-  file('d2', BOSS, 28, { kind: 'document', file_name: 'Acme_Proposal_v3.pdf', mime_type: 'application/pdf', size_bytes: 1_840_000, storage_path: 'demo/proposal.pdf', item_id: 't1' }),
+  file('d2', BOSS, 28, { kind: 'document', file_name: 'Acme_Corporation_Marketing_Proposal_2026_v3.pdf', mime_type: 'application/pdf', size_bytes: 1_840_000, storage_path: 'demo/proposal.pdf', item_id: 't1' }),
   file('d3', BOSS, 40, { kind: 'document', file_name: 'Onboarding_Checklist.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size_bytes: 54_000, storage_path: 'demo/onboarding.docx', item_id: 't5' }),
-  file('d4', ME, 33, { kind: 'document', file_name: 'Report_Template.pptx', mime_type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', size_bytes: 3_200_000, storage_path: 'demo/template.pptx', item_id: 'n6' }),
+  file('d4', ME, 33, { kind: 'document', file_name: 'Quarterly_Sales_Report_Template_Final_v2_reviewed.pptx', mime_type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', size_bytes: 3_200_000, storage_path: 'demo/template.pptx', item_id: 'n6' }),
   file('d5', BOSS, 96, { kind: 'video', file_name: 'product-demo.mp4', mime_type: 'video/mp4', size_bytes: 48_000_000, status: 'too_large' }),
   file('v1', BOSS, 9, { kind: 'voice', mime_type: 'audio/ogg', size_bytes: 61_000, duration_seconds: 38, storage_path: 'demo/v1.ogg', item_id: 't3', transcript: 'ভেন্ডরকে ফোন করে ডেলিভারির তারিখটা আজকের মধ্যেই নিশ্চিত করে নিও, দেরি হলে আমাকে জানাবে।', transcript_words: timed('ভেন্ডরকে ফোন করে ডেলিভারির তারিখটা আজকের মধ্যেই নিশ্চিত করে নিও, দেরি হলে আমাকে জানাবে।', 38) }),
   file('v2', BOSS, 26, { kind: 'voice', mime_type: 'audio/ogg', size_bytes: 122_000, duration_seconds: 74, storage_path: 'demo/v2.ogg', item_id: 'n2', transcript: 'Acme-তে এখন থেকে তানভীর সাহেবের সাথে কথা বলবে, আগের জন আর এই প্রজেক্টে নেই।', transcript_words: timed('Acme-তে এখন থেকে তানভীর সাহেবের সাথে কথা বলবে, আগের জন আর এই প্রজেক্টে নেই।', 74) }),
@@ -350,6 +351,17 @@ export const demoApi = {
   fetchItemExtras: (id: string) => {
     const it = items.find((i) => i.id === id);
     const messages: Message[] = it ? [messageOf(it)] : [];
+    // A little back-and-forth, so the conversation view has both sides to show.
+    if (it && it.source_sender_tg_id === BOSS) {
+      const say = (suffix: string, by: number, at: string, text: string): Message => ({
+        id: `m-${id}-${suffix}`, chat_id: -1001234567890, tg_message_id: 4813, sender_tg_id: by, sender_name: nameOf(by), sent_at: at, edited_at: null, kind: 'text', text,
+        transcript: null, transcript_words: null, forwarded_by_tg_id: null, forwarded_by_name: null, files: [], links: [],
+      });
+      const after = (hours: number) => new Date(new Date(it.created_at).getTime() + hours * 3600_000).toISOString();
+      messages.push(say('r1', ME, after(0.4), 'জি স্যার, দেখছি।'));
+      if (it.steps_total) messages.push(say('b2', BOSS, after(5), 'লোগোটা নতুনটা ব্যবহার করবে, পুরোনোটা না।'));
+      if (it.status === 'waiting' || it.status === 'done') messages.push(say('r2', ME, it.status === 'done' ? ago(3.1) : ago(52.2), 'স্যার, পাঠিয়ে দিয়েছি। দেখে জানাবেন।'));
+    }
     const events: ItemEvent[] = it
       ? [
           ...(it.status !== 'todo' ? [{ id: `e2-${id}`, item_id: id, actor: 'user' as const, summary: `You changed: Status`, created_at: ago(3) }] : []),

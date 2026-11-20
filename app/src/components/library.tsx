@@ -7,7 +7,7 @@ import { signedUrl } from '@/lib/api';
 import { notify } from '@/lib/dialog';
 import type { ShareTarget } from '@/lib/share';
 import { useData } from '@/lib/data';
-import { fileExt, fileGroup, fileStatusText, fileTitle, fmtDate, fmtDateTime, fmtSize, splitUrl } from '@/lib/format';
+import { fileExt, fileGroup, fileStatusText, fileTitle, fmtDate, fmtDateTime, fmtSize, splitFileName, splitUrl } from '@/lib/format';
 import { tap } from '@/lib/haptics';
 import { roleColors } from '@/lib/roles';
 import { radius, space, ui, useTheme } from '@/lib/theme';
@@ -50,8 +50,22 @@ export function ExtBadge({ file, size = 44 }: { file: Pick<FileRow, 'file_name' 
       {group === 'document' ? (
         <Text style={{ color: '#FFFFFF', fontFamily: ui.extrabold, fontSize: ext.length > 3 ? size * 0.22 : size * 0.27, letterSpacing: 0.3 }}>{ext}</Text>
       ) : (
-        <Ionicons name={group === 'voice' ? 'mic' : 'image'} size={size * 0.46} color="#FFFFFF" />
+        <Ionicons name={group === 'voice' ? 'mic-outline' : 'image-outline'} size={size * 0.46} color="#FFFFFF" />
       )}
+    </View>
+  );
+}
+
+/**
+ * A file name on one line that is cut in the middle, so the type stays visible:
+ * "Quarterly_Sales_Repo….pptx". The name part shrinks; the extension never does.
+ */
+export function FileName({ name, variant = 'body', strong }: { name: string; variant?: 'body' | 'label'; strong?: boolean }) {
+  const { stem, ext } = splitFileName(name);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'baseline', minWidth: 0 }} accessibilityLabel={name}>
+      <Txt variant={variant} content strong={strong} numberOfLines={1} style={{ flexShrink: 1 }}>{stem}</Txt>
+      {ext ? <Txt variant={variant} content strong={strong} numberOfLines={1} style={{ flexShrink: 0 }}>{ext}</Txt> : null}
     </View>
   );
 }
@@ -131,7 +145,7 @@ export function FileListRow({ file, thumb, onStar, onOpen }: FileProps) {
       <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
         {thumb ? <Image source={{ uri: thumb }} style={{ width: 48, height: 48, borderRadius: radius.sm }} /> : <ExtBadge file={file} size={48} />}
         <View style={{ flex: 1, gap: 3 }}>
-          <Txt content strong numberOfLines={1}>{fileTitle(file)}</Txt>
+          <FileName name={fileTitle(file)} strong />
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             <RoleBadge role={role(file.sender_tg_id)} compact />
             <Txt variant="caption" sub numberOfLines={1} style={{ flexShrink: 1 }}>{[fmtSize(file.size_bytes), fmtDate(file.sent_at)].filter(Boolean).join(' · ')}</Txt>
@@ -157,7 +171,7 @@ export function DocTile({ file, onStar, width }: FileProps & { width: number }) 
         <ShareButton target={fileShareTarget(file)} />
         <StarButton starred={file.starred} onPress={onStar} />
       </View>
-      <Txt content strong numberOfLines={2} style={{ minHeight: 48 }}>{fileTitle(file)}</Txt>
+      <FileName name={fileTitle(file)} strong />
       {problem ? <Txt variant="caption" color={t.danger} numberOfLines={2}>{problem}</Txt> : <Txt variant="caption" sub>{[fmtSize(file.size_bytes), fmtDate(file.sent_at)].filter(Boolean).join(' · ')}</Txt>}
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <View style={{ flex: 1 }}><RoleBadge role={role(file.sender_tg_id)} compact /></View>
@@ -262,7 +276,7 @@ export function LinkRow({ link, onStar, showHost = true, last }: LinkProps & { s
       accessibilityLabel={`Open ${linkLabel(link)}`}
       accessibilityHint="Hold to copy the link"
       style={({ pressed }) => [
-        { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 11, paddingHorizontal: space.md, minHeight: 60 },
+        { flexDirection: 'row', alignItems: 'center', gap: space.sm + 2, paddingVertical: 11, paddingHorizontal: space.md, minHeight: 60 },
         !last && { borderBottomWidth: 1, borderBottomColor: t.border },
         pressed && { backgroundColor: t.surfaceAlt },
       ]}>
@@ -278,7 +292,6 @@ export function LinkRow({ link, onStar, showHost = true, last }: LinkProps & { s
       </View>
       <ShareButton target={linkShareTarget(link)} />
       <StarButton starred={link.starred} onPress={onStar} />
-      <Ionicons name="open-outline" size={18} color={t.primary} />
     </Pressable>
   );
 }
@@ -429,7 +442,7 @@ export function AttachmentRow({ file, onOpen }: { file: FileRow; onOpen?: () => 
     <Pressable onPress={onOpen ?? (() => openFile(file))} disabled={file.status !== 'stored'} style={({ pressed }) => [{ flexDirection: 'row', gap: space.md, alignItems: 'center', padding: space.sm, borderRadius: radius.md, backgroundColor: t.surface }, pressed && styles.pressed]}>
       <ExtBadge file={file} size={38} />
       <View style={{ flex: 1 }}>
-        <Txt variant="label" content numberOfLines={1}>{fileTitle(file)}</Txt>
+        <FileName name={fileTitle(file)} variant="label" />
         <Txt variant="caption" color={problem && file.status !== 'pending' ? t.danger : t.sub}>{problem ?? fmtSize(file.size_bytes)}</Txt>
       </View>
       {file.status === 'stored' ? <Ionicons name="open-outline" size={17} color={t.sub} /> : null}

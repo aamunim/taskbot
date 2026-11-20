@@ -73,7 +73,7 @@ export default function Timeline() {
                     </View>
                     {m.forwarded_by_tg_id != null || m.forwarded_by_name ? (
                       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
-                        <Ionicons name="arrow-redo" size={12} color={t.sub} />
+                        <Ionicons name="arrow-redo-outline" size={12} color={t.sub} />
                         <Txt variant="caption" sub>
                           {forwardedByMe ? 'Forwarded by you' : <>Forwarded by <Txt variant="caption" content sub>{m.forwarded_by_name ?? 'someone'}</Txt></>}
                         </Txt>
@@ -83,7 +83,7 @@ export default function Timeline() {
                       <View style={{ backgroundColor: c.bg, borderRadius: radius.md, borderTopLeftRadius: 4, paddingVertical: space.sm, paddingHorizontal: space.md, alignSelf: 'flex-start', maxWidth: '100%' }}>
                         {m.transcript && !m.text ? (
                           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, marginBottom: 2 }}>
-                            <Ionicons name="mic" size={12} color={c.fg} />
+                            <Ionicons name="mic-outline" size={12} color={c.fg} />
                             <Txt variant="caption" color={c.fg}>Voice, transcribed</Txt>
                           </View>
                         ) : null}
@@ -148,7 +148,7 @@ export default function Timeline() {
         contentContainerStyle={[styles.list, { paddingBottom: 48 }]}
         refreshControl={
           <RefreshControl
-            tintColor={t.primary}
+            tintColor={t.primary} colors={[t.primaryBg, t.bossSolid, t.meSolid]} progressBackgroundColor={t.raised}
             refreshing={refreshing}
             onRefresh={async () => {
               setRefreshing(true);

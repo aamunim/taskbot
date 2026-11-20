@@ -13,7 +13,7 @@ import { Appear } from '@/components/motion';
 import { Avatar, Btn, Card, Chip, Empty, ErrorBanner, IconBtn, SectionHeader, Segments, Skeleton, Toggle, TopBar, Txt } from '@/components/ui';
 import * as api from '@/lib/api';
 import { useData } from '@/lib/data';
-import { PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_SHORT, fileGroup, fmtDate, fmtDateTime, fmtTime, fromPickerDate, telegramLink, toPickerDate, waitingLabel } from '@/lib/format';
+import { PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_SHORT, dayNumber, fileGroup, fmtDate, fmtDateTime, fmtDayLong, fmtTime, fromPickerDate, telegramLink, todayNumber, toPickerDate, waitingLabel } from '@/lib/format';
 import { ROLE_LABEL, roleColors } from '@/lib/roles';
 import { content, elevation, noOutline, radius, space, useTheme } from '@/lib/theme';
 import type { Item, ItemEvent, ItemType, Message, Priority } from '@/lib/types';
@@ -185,7 +185,7 @@ export function ItemDetailView({ id, mode = 'screen', onClose }: { id: string; m
         {item.needs_review ? (
           <Card flat style={{ backgroundColor: t.bossSoft, borderColor: 'transparent', gap: space.md }}>
             <View style={{ flexDirection: 'row', gap: space.sm }}>
-              <Ionicons name="help-buoy" size={20} color={t.boss} />
+              <Ionicons name="help-buoy-outline" size={20} color={t.boss} />
               <Txt variant="label" color={t.boss} style={{ flex: 1 }}>The AI was not sure about this one. Confirm it if it looks right, or edit it below.</Txt>
             </View>
             <Btn small icon="checkmark" label="Looks right" onPress={() => updateItem(item.id, { needs_review: false }, 'Reviewed and confirmed')} style={{ alignSelf: 'flex-start' }} />
@@ -269,94 +269,105 @@ export function ItemDetailView({ id, mode = 'screen', onClose }: { id: string; m
 
         <Card style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-            <Ionicons name="lock-closed" size={13} color={t.faint} />
+            <Ionicons name="lock-closed-outline" size={13} color={t.faint} />
             <Txt variant="overline" sub>My private note</Txt>
           </View>
           <GrowInput value={draft.user_note ?? ''} onChangeText={(v) => set({ user_note: v || null })} placeholder="Only you can see this" placeholderTextColor={t.faint} style={[input, { minHeight: 44, textAlignVertical: 'top' }]} />
         </Card>
     </>
   );
-  const context = (
-    <>
-        <View>
-          <SectionHeader title={messages.length > 1 ? 'Original messages' : 'Original message'} />
-          {!messages.length ? <Txt variant="label" sub style={{ paddingHorizontal: 2 }}>No message is linked to this item.</Txt> : null}
-          <View style={{ gap: space.md }}>
-            {messages.map((m) => {
-              const link = telegramLink(m.chat_id, m.tg_message_id);
-              const mr = role(m.sender_tg_id);
-              const mc = roleColors(t, mr);
-              return (
-                <Card key={m.id} style={{ gap: space.md, backgroundColor: mc.bg, borderColor: 'transparent' }} flat>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                    <Avatar role={mr} name={m.sender_name} size={26} solid />
-                    <Txt variant="label" content color={mc.fg} strong style={{ flex: 1 }} numberOfLines={1}>{m.sender_name ?? 'Unknown'}</Txt>
-                    <Txt variant="caption" color={mc.fg}>{fmtDateTime(m.sent_at)}{m.edited_at ? ' · edited' : ''}</Txt>
-                  </View>
-                  {m.forwarded_by_tg_id != null || m.forwarded_by_name ? (
-                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                      <Ionicons name="arrow-redo" size={13} color={mc.fg} />
-                      <Txt variant="caption" color={mc.fg}>
-                        {m.forwarded_by_tg_id != null && m.forwarded_by_tg_id === config?.owner_tg_id ? 'Forwarded by you' : <>Forwarded by <Txt variant="caption" content color={mc.fg}>{m.forwarded_by_name ?? 'someone'}</Txt></>}
-                      </Txt>
-                    </View>
-                  ) : null}
-                  {m.text ? <Txt content selectable>{m.text}</Txt> : null}
-                  {(() => {
-                    // The first voice file carries the transcript; later files (rare) play without it.
-                    let transcriptShown = false;
-                    const rows = m.files.map((f) => {
-                      if (fileGroup(f) === 'voice' && f.status === 'stored' && f.storage_path) {
-                        const withText = !transcriptShown;
-                        transcriptShown = true;
-                        return (
-                          <View key={f.id} style={{ backgroundColor: t.surface, borderRadius: radius.md, padding: space.md }}>
-                            <AudioPlayer storagePath={f.storage_path} duration={f.duration_seconds} words={withText ? m.transcript_words : null} transcript={withText ? m.transcript : null} />
-                          </View>
-                        );
-                      }
-                      return <AttachmentRow key={f.id} file={f} onOpen={() => openAttachment(f, { sender: m.sender_name, role: mr, sentAt: m.sent_at })} />;
-                    });
-                    return (
-                      <>
-                        {rows}
-                        {m.transcript && !transcriptShown ? (
-                          <View style={{ gap: 2 }}>
-                            <Txt variant="caption" color={mc.fg}>Transcribed from voice, may contain mistakes</Txt>
-                            <Txt content selectable>{m.transcript}</Txt>
-                          </View>
-                        ) : null}
-                      </>
-                    );
-                  })()}
-                  {m.links.map((l) => <LinkChip key={l.id} link={l} />)}
-                  {link ? <Btn small kind="inverse" icon="paper-plane" label="Open in Telegram" onPress={() => Linking.openURL(link)} style={{ alignSelf: 'flex-start' }} /> : null}
-                </Card>
-              );
-            })}
+  // One stream, oldest first: what was said about this item and what happened to it.
+  type Entry = { key: string; at: string; message?: Message; event?: ItemEvent };
+  const stream: Entry[] = [
+    ...messages.map((m) => ({ key: `m-${m.id}`, at: m.sent_at, message: m })),
+    ...events.map((e) => ({ key: `e-${e.id}`, at: e.created_at, event: e })),
+  ].sort((a, b) => a.at.localeCompare(b.at));
+
+  const bubble = (m: Message) => {
+    const link = telegramLink(m.chat_id, m.tg_message_id);
+    const mr = role(m.sender_tg_id);
+    const mc = roleColors(t, mr);
+    const mine = mr === 'me';
+    // The first voice file carries the transcript; later files (rare) play without it.
+    let transcriptShown = false;
+    const attachments = m.files.map((f) => {
+      if (fileGroup(f) === 'voice' && f.status === 'stored' && f.storage_path) {
+        const withText = !transcriptShown;
+        transcriptShown = true;
+        return (
+          <View key={f.id} style={{ backgroundColor: t.surface, borderRadius: radius.md, padding: space.md }}>
+            <AudioPlayer storagePath={f.storage_path} duration={f.duration_seconds} words={withText ? m.transcript_words : null} transcript={withText ? m.transcript : null} />
+          </View>
+        );
+      }
+      return <AttachmentRow key={f.id} file={f} onOpen={() => openAttachment(f, { sender: m.sender_name, role: mr, sentAt: m.sent_at })} />;
+    });
+    return (
+      <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: space.sm, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+        {mine ? null : <Avatar role={mr} name={m.sender_name} size={28} solid />}
+        <View style={{ maxWidth: '86%', flexShrink: 1, gap: space.sm, paddingVertical: space.md, paddingHorizontal: space.md + 2, backgroundColor: mc.bg, borderRadius: radius.lg, borderBottomLeftRadius: mine ? radius.lg : 6, borderBottomRightRadius: mine ? 6 : radius.lg }}>
+          {mine ? null : <Txt variant="caption" content color={mc.fg} strong numberOfLines={1}>{m.sender_name ?? 'Unknown'}</Txt>}
+          {m.forwarded_by_tg_id != null || m.forwarded_by_name ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="arrow-redo-outline" size={13} color={mc.fg} />
+              <Txt variant="caption" color={mc.fg}>
+                {m.forwarded_by_tg_id != null && m.forwarded_by_tg_id === config?.owner_tg_id ? 'Forwarded by you' : <>Forwarded by <Txt variant="caption" content color={mc.fg}>{m.forwarded_by_name ?? 'someone'}</Txt></>}
+              </Txt>
+            </View>
+          ) : null}
+          {m.text ? <Txt content selectable>{m.text}</Txt> : null}
+          {attachments}
+          {m.transcript && !transcriptShown ? (
+            <View style={{ gap: 2 }}>
+              <Txt variant="caption" color={mc.fg}>Transcribed from voice, may contain mistakes</Txt>
+              <Txt content selectable>{m.transcript}</Txt>
+            </View>
+          ) : null}
+          {m.links.map((l) => <LinkChip key={l.id} link={l} />)}
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, justifyContent: mine ? 'flex-end' : 'flex-start' }}>
+            <Txt variant="caption" color={mc.fg} style={{ opacity: 0.85 }}>{fmtTime(m.sent_at)}{m.edited_at ? ' · edited' : ''}</Txt>
+            {link ? (
+              <Pressable onPress={() => Linking.openURL(link)} hitSlop={8} accessibilityRole="link" accessibilityLabel="Open in Telegram" style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 4 }, pressed && { opacity: 0.6 }]}>
+                <Ionicons name="paper-plane-outline" size={12} color={mc.fg} />
+                <Txt variant="caption" color={mc.fg} strong>Telegram</Txt>
+              </Pressable>
+            ) : null}
           </View>
         </View>
+      </View>
+    );
+  };
 
-        {events.length ? (
-          <View>
-            <SectionHeader title="History" />
-            <Card style={{ gap: 0 }}>
-              {events.map((e, i) => (
-                <View key={e.id} style={{ flexDirection: 'row', gap: space.md }}>
-                  <View style={{ alignItems: 'center', width: 12 }}>
-                    <View style={{ width: 10, height: 10, borderRadius: 5, marginTop: 6, backgroundColor: e.actor === 'ai' ? t.primary : t.meSolid }} />
-                    {i < events.length - 1 ? <View style={{ flex: 1, width: 2, backgroundColor: t.border, marginVertical: 2 }} /> : null}
-                  </View>
-                  <View style={{ flex: 1, paddingBottom: i < events.length - 1 ? space.md : 0 }}>
-                    <Txt variant="label" content>{e.summary}</Txt>
-                    <Txt variant="caption" sub>{e.actor === 'ai' ? 'Bot' : 'You'} · {fmtDateTime(e.created_at)}</Txt>
-                  </View>
+  const context = (
+    <View>
+      <SectionHeader title="Conversation" count={messages.length || undefined} />
+      {!stream.length ? <Txt variant="label" sub style={{ paddingHorizontal: 2 }}>No message is linked to this item.</Txt> : null}
+      <View style={{ gap: space.md }}>
+        {stream.map((e, i) => {
+          const newDay = i === 0 || dayNumber(stream[i - 1].at) !== dayNumber(e.at);
+          return (
+            <View key={e.key} style={{ gap: space.md }}>
+              {newDay ? (
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, marginTop: i ? space.sm : 0 }}>
+                  <View style={{ flex: 1, height: 1, backgroundColor: t.border }} />
+                  <Txt variant="caption" sub strong>{dayNumber(e.at) === todayNumber() ? 'Today' : fmtDayLong(dayNumber(e.at))}</Txt>
+                  <View style={{ flex: 1, height: 1, backgroundColor: t.border }} />
                 </View>
-              ))}
-            </Card>
-          </View>
-        ) : null}
-    </>
+              ) : null}
+              {e.message ? bubble(e.message) : null}
+              {e.event ? (
+                <View style={{ alignSelf: 'center', maxWidth: '92%', flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 5, paddingHorizontal: space.md, borderRadius: radius.pill, backgroundColor: t.surfaceAlt }}>
+                  <Ionicons name={e.event.actor === 'ai' ? 'sparkles-outline' : 'person-outline'} size={12} color={t.sub} />
+                  <Txt variant="caption" sub numberOfLines={2} style={{ flexShrink: 1 }}>
+                    <Txt variant="caption" content sub strong>{e.event.summary}</Txt> · {e.event.actor === 'ai' ? 'Bot' : 'You'} · {fmtTime(e.event.created_at)}
+                  </Txt>
+                </View>
+              ) : null}
+            </View>
+          );
+        })}
+      </View>
+    </View>
   );
   const title = draft.type === 'task' ? 'Task' : 'Note';
   const trash = !item.dismissed ? <IconBtn icon="trash-outline" label="Dismiss this item" size={mode === 'screen' ? 40 : 36} onPress={() => setDismissed(true)} bg={mode === 'pane' ? t.surfaceAlt : t.surface} color={t.danger} /> : undefined;

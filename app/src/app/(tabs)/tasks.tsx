@@ -65,7 +65,7 @@ export default function Tasks() {
   const change = (item: Item) => (to: Status) => updateItem(item.id, { status: to }, `Status changed to ${STATUS_LABEL[to]}`);
   const refreshControl = (
     <RefreshControl
-      tintColor={t.primary}
+      tintColor={t.primary} colors={[t.primaryBg, t.bossSolid, t.meSolid]} progressBackgroundColor={t.raised}
       refreshing={refreshing}
       onRefresh={async () => {
         setRefreshing(true);
@@ -187,7 +187,7 @@ export default function Tasks() {
           )}
           renderItem={({ item, index }) => (
             <Appear index={index}>
-              <TaskCard item={item} onStatus={change(item)} />
+              <TaskCard item={item} onStatus={change(item)} leaveOnDone={status !== 'done'} />
             </Appear>
           )}
           ListEmptyComponent={

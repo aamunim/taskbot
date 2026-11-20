@@ -175,3 +175,16 @@ export function telegramLink(chatId: number | null, tgMessageId: number): string
   if (!s.startsWith('-100')) return null;
   return `https://t.me/c/${s.slice(4)}/${tgMessageId}`;
 }
+
+/** The shortest useful deadline for a one-line row: the time if it is today, otherwise the day. */
+export function dueShort(item: Pick<Item, 'due_at' | 'due_all_day'>): string | null {
+  if (!item.due_at) return null;
+  if (!item.due_all_day && dayNumber(item.due_at) === todayNumber()) return fmtTime(item.due_at);
+  return fmtDate(item.due_at);
+}
+
+/** Splits "Report_final.pptx" into its name and ".pptx", so a long name can be cut while the type stays visible. */
+export function splitFileName(name: string): { stem: string; ext: string } {
+  const m = /^(.*\S)(\.[A-Za-z0-9]{1,6})$/.exec(name);
+  return m ? { stem: m[1], ext: m[2] } : { stem: name, ext: '' };
+}

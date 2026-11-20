@@ -187,7 +187,7 @@ export default function Library() {
         ) : (
           <OptionGroup label="Group by" value={groupBy} onChange={setGroupBy} options={[{ value: 'none', label: 'None' }, { value: 'date', label: 'Date' }, { value: 'sender', label: 'Sender' }, { value: 'type', label: 'Type' }]} />
         )}
-        <OptionGroup label="Starred" value={starFirst} onChange={setStarFirst} options={[{ value: 'on', label: 'Starred first', icon: 'star' }, { value: 'off', label: 'Mixed in' }]} />
+        <OptionGroup label="Starred" value={starFirst} onChange={setStarFirst} options={[{ value: 'on', label: 'Starred first', icon: 'star-outline' }, { value: 'off', label: 'Mixed in' }]} />
       </Sheet>
   );
 
@@ -206,9 +206,9 @@ export default function Library() {
         <Page>
           {isLinks && links.length ? (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, width: 380, maxWidth: '100%', backgroundColor: t.surface, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.md, marginBottom: groups.length && !groups[0][0] ? space.lg : 0 }}>
-              <Ionicons name="search" size={17} color={t.faint} />
+              <Ionicons name="search-outline" size={17} color={t.faint} />
               <TextInput value={linkQuery} onChangeText={setLinkQuery} placeholder="Find a link" placeholderTextColor={t.faint} autoCapitalize="none" autoCorrect={false} accessibilityLabel="Find a link" style={[{ flex: 1, minWidth: 0, color: t.text, fontFamily: content.regular, fontSize: 15 * t.scale, paddingVertical: 8 }, noOutline]} />
-              {linkQuery ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setLinkQuery('')} accessibilityLabel="Clear" /> : null}
+              {linkQuery ? <Ionicons name="close-circle-outline" size={18} color={t.faint} onPress={() => setLinkQuery('')} accessibilityLabel="Clear" /> : null}
             </View>
           ) : null}
           <ErrorBanner text={error} />
@@ -253,7 +253,7 @@ export default function Library() {
         contentContainerStyle={[styles.list, { paddingHorizontal: 0 }]}
         refreshControl={
           <RefreshControl
-            tintColor={t.primary}
+            tintColor={t.primary} colors={[t.primaryBg, t.bossSolid, t.meSolid]} progressBackgroundColor={t.raised}
             refreshing={refreshing}
             onRefresh={async () => {
               setRefreshing(true);
@@ -267,7 +267,7 @@ export default function Library() {
         </ScrollView>
         {isLinks && links.length ? (
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, marginTop: space.md, backgroundColor: t.surface, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.md }}>
-            <Ionicons name="search" size={18} color={t.faint} />
+            <Ionicons name="search-outline" size={18} color={t.faint} />
             <TextInput
               value={linkQuery}
               onChangeText={setLinkQuery}
@@ -279,7 +279,7 @@ export default function Library() {
               accessibilityLabel="Find a link"
               style={[{ flex: 1, color: t.text, fontFamily: content.regular, fontSize: 16 * t.scale, paddingVertical: 10 }, noOutline]}
             />
-            {linkQuery ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setLinkQuery('')} accessibilityLabel="Clear" /> : null}
+            {linkQuery ? <Ionicons name="close-circle-outline" size={18} color={t.faint} onPress={() => setLinkQuery('')} accessibilityLabel="Clear" /> : null}
           </View>
         ) : null}
         <View style={{ paddingHorizontal: space.lg, paddingTop: groups.length && !groups[0][0] ? space.lg : 0 }}>

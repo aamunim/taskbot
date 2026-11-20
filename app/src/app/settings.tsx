@@ -15,7 +15,7 @@ import { fmtDateTime, plural } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 import { tap } from '@/lib/haptics';
 import { usePref } from '@/lib/prefs';
-import { ACCENTS, APPEARANCES, PREF_ACCENT, PREF_APPEARANCE, PREF_TEXT_SIZE, TEXT_SIZES, content, noOutline, radius, space, useTheme, type Accent, type Appearance, type TextSize } from '@/lib/theme';
+import { ACCENTS, APPEARANCES, DENSITIES, PREF_ACCENT, PREF_APPEARANCE, PREF_DENSITY, PREF_TEXT_SIZE, TEXT_SIZES, content, noOutline, radius, space, useTheme, type Accent, type Appearance, type Density, type TextSize } from '@/lib/theme';
 import { checkForUpdate, restartToUpdate, runningVersion, showUpdatePrompt, useUpdateState } from '@/lib/updates';
 import type { Sender } from '@/lib/types';
 
@@ -43,6 +43,7 @@ export default function SettingsScreen() {
   const [accent, setAccent] = usePref<Accent>(PREF_ACCENT, 'indigo');
   const [appearance, setAppearance] = usePref<Appearance>(PREF_APPEARANCE, 'system');
   const [textSize, setTextSize] = usePref<TextSize>(PREF_TEXT_SIZE, 'default');
+  const [density, setDensity] = usePref<Density>(PREF_DENSITY, 'comfortable');
   const update = useUpdateState();
   const running = runningVersion();
 
@@ -137,6 +138,13 @@ export default function SettingsScreen() {
               {TEXT_SIZES.map((a) => <Chip key={a.value} label={a.label} active={textSize === a.value} onPress={() => { tap(); setTextSize(a.value); }} />)}
             </View>
             <Txt variant="caption" sub>Boss and Me keep their amber and teal in every colour.</Txt>
+          </View>
+          <View style={{ gap: space.sm }}>
+            <Txt variant="body" strong>Task lists</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {DENSITIES.map((a) => <Chip key={a.value} label={a.label} icon={a.value === 'compact' ? 'reorder-four-outline' : 'albums-outline'} active={density === a.value} onPress={() => { tap(); setDensity(a.value); }} />)}
+            </View>
+            <Txt variant="caption" sub>{density === 'compact' ? 'One line per task, so more fit on the screen.' : 'A card per task, with its details and deadline.'}</Txt>
           </View>
         </Card>
   );
@@ -266,7 +274,7 @@ export default function SettingsScreen() {
               </Txt>
             </View>
             {update.phase === 'ready' ? (
-              <Btn small icon="refresh" label="Restart" onPress={() => (DEMO ? showUpdatePrompt() : restartToUpdate())} />
+              <Btn small icon="refresh-outline" label="Restart" onPress={() => (DEMO ? showUpdatePrompt() : restartToUpdate())} />
             ) : (
               <Btn small kind="soft" label="Check" disabled={update.phase === 'checking' || update.phase === 'downloading'} onPress={() => checkForUpdate(true)} />
             )}
@@ -283,7 +291,7 @@ export default function SettingsScreen() {
           ))}
           {!others.length ? <Txt variant="label" sub>Nobody else has written in the group yet.</Txt> : null}
           <Txt variant="caption" sub>Only people whose messages the bot has seen appear here. If your boss is missing, ask them to send any message in the group, or forward one of their messages into it, then open this list again.</Txt>
-          <Choice selected={cfg.boss_tg_id == null} onPress={() => chooseBoss(null)} title="Everyone except me" subtitle="Treat all other senders as the boss" avatar={<View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="people" size={20} color={t.sub} /></View>} />
+          <Choice selected={cfg.boss_tg_id == null} onPress={() => chooseBoss(null)} title="Everyone except me" subtitle="Treat all other senders as the boss" avatar={<View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="people-outline" size={20} color={t.sub} /></View>} />
         </View>
       </Sheet>
   );
@@ -297,7 +305,7 @@ export default function SettingsScreen() {
           <ErrorBanner text={error} />
           {DEMO ? (
             <Card flat style={{ backgroundColor: t.primarySoft, borderColor: 'transparent', flexDirection: 'row', gap: space.sm, maxWidth: 1260 }}>
-              <Ionicons name="flask" size={18} color={t.primary} />
+              <Ionicons name="flask-outline" size={18} color={t.primary} />
               <Txt variant="label" color={t.primary} style={{ flex: 1 }}>Demo build with sample data. Nothing here is saved.</Txt>
             </Card>
           ) : null}
@@ -335,7 +343,7 @@ export default function SettingsScreen() {
         <ErrorBanner text={error} />
         {DEMO ? (
           <Card flat style={{ backgroundColor: t.primarySoft, borderColor: 'transparent', flexDirection: 'row', gap: space.sm }}>
-            <Ionicons name="flask" size={18} color={t.primary} />
+            <Ionicons name="flask-outline" size={18} color={t.primary} />
             <Txt variant="label" color={t.primary} style={{ flex: 1 }}>Demo build with sample data. Nothing here is saved.</Txt>
           </Card>
         ) : null}

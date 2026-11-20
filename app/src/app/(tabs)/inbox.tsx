@@ -55,7 +55,7 @@ export default function Inbox() {
                 </View>
               ) : null}
               <View style={{ flexDirection: 'row', gap: space.sm }}>
-                <Btn small icon="checkmark-circle" label="Task" style={{ flex: 1 }} onPress={() => updateItem(item.id, { type: 'task', needs_review: false }, 'Confirmed as a task')} />
+                <Btn small icon="checkmark-circle-outline" label="Task" style={{ flex: 1 }} onPress={() => updateItem(item.id, { type: 'task', needs_review: false }, 'Confirmed as a task')} />
                 <Btn small kind="soft" icon="reader" label="Note" style={{ flex: 1 }} onPress={() => updateItem(item.id, { type: 'note', needs_review: false }, 'Confirmed as a note')} />
                 <Btn small kind="danger" icon="close" label="Dismiss" style={{ flex: 1 }} onPress={() => updateItem(item.id, { dismissed: true }, 'Dismissed')} />
               </View>
@@ -97,7 +97,7 @@ export default function Inbox() {
         ItemSeparatorComponent={() => <View style={{ height: space.md }} />}
         refreshControl={
           <RefreshControl
-            tintColor={t.primary}
+            tintColor={t.primary} colors={[t.primaryBg, t.bossSolid, t.meSolid]} progressBackgroundColor={t.raised}
             refreshing={refreshing}
             onRefresh={async () => {
               setRefreshing(true);

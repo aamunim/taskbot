@@ -25,7 +25,7 @@ export default function Projects() {
       <Card onPress={() => openProject(p.tag)} style={{ gap: space.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
                   <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: t.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
-                    <Ionicons name="folder-open" size={21} color={t.primary} />
+                    <Ionicons name="folder-open-outline" size={21} color={t.primary} />
                   </View>
                   <View style={{ flex: 1 }}>
                     <Txt variant="heading" content numberOfLines={1}>#{p.tag}</Txt>

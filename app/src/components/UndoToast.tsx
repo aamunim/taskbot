@@ -58,7 +58,7 @@ export function UndoToastHost() {
         accessibilityRole="alert"
         style={{ width: '100%', maxWidth: 460, borderRadius: radius.lg, backgroundColor: t.text, overflow: 'hidden' }}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, paddingLeft: space.lg, paddingRight: space.sm }}>
-          <Ionicons name="paper-plane" size={18} color={t.bg} />
+          <Ionicons name="paper-plane-outline" size={18} color={t.bg} />
           <Txt variant="label" color={t.bg} style={{ flex: 1 }}>{toast.text}</Txt>
           <Pressable
             onPress={() => undoCurrent()}

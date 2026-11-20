@@ -27,6 +27,8 @@ export type Item = {
   completed_at: string | null;
   /** Set by the database while status is 'waiting' (delivered, waiting for the boss). */
   waiting_since: string | null;
+  /** "Remind me again at this time"; the bot sends the reminder and clears it. */
+  remind_at: string | null;
   created_at: string;
   updated_at: string;
   /** Derived client-side from the linked messages. */

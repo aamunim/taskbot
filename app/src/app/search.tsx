@@ -8,17 +8,17 @@ import * as api from '@/lib/api';
 import { Grid, Page, Panel } from '@/components/desktop';
 import { useData } from '@/lib/data';
 import { useLayout } from '@/lib/layout';
-import { fmtDateTime } from '@/lib/format';
+import { fmtDate, fmtDateTime } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
-import { matchesRole } from '@/lib/roles';
-import { content, noOutline, radius, space, useTheme } from '@/lib/theme';
+import { matchesRole, roleColors } from '@/lib/roles';
+import { content, noOutline, radius, space, useDensity, useTheme } from '@/lib/theme';
 import type { RoleFilter, SearchResult } from '@/lib/types';
 
 const KIND: Record<SearchResult['kind'], { label: string; icon: IconName }> = {
-  task: { label: 'Task', icon: 'checkmark-circle' },
+  task: { label: 'Task', icon: 'checkmark-circle-outline' },
   note: { label: 'Note', icon: 'reader' },
-  message: { label: 'Message', icon: 'chatbubble-ellipses' },
-  file: { label: 'File', icon: 'document-attach' },
+  message: { label: 'Message', icon: 'chatbubble-ellipses-outline' },
+  file: { label: 'File', icon: 'document-attach-outline' },
 };
 type Filter = 'all' | SearchResult['kind'];
 const FILTERS: Filter[] = ['all', 'task', 'note', 'message', 'file'];
@@ -64,9 +64,23 @@ export default function Search() {
   const list = results.filter((r) => (filter === 'all' || r.kind === filter) && matchesRole(role(r.sender_tg_id), who));
   const short = q.trim().length < 2;
 
+  const compact = useDensity() === 'compact';
   const resultCard = (r: SearchResult) => {
           const k = KIND[r.kind] ?? KIND.message;
           const id = r.item_id;
+          if (compact) {
+            // One line per result: what it is, its title or text, who and when.
+            return (
+              <Card onPress={id ? () => openItem(id) : undefined} style={{ paddingVertical: 10, paddingHorizontal: space.md }}>
+                <View style={{ flexDirection: 'row', gap: space.sm + 2, alignItems: 'center' }}>
+                  <Ionicons name={k.icon} size={17} color={t.primary} accessibilityLabel={k.label} />
+                  <Txt content strong={r.kind !== 'message'} numberOfLines={1} style={{ flex: 1 }}>{(r.kind !== 'message' && r.title) || r.snippet || k.label}</Txt>
+                  <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: roleColors(t, role(r.sender_tg_id)).solid }} />
+                  <Txt variant="caption" sub numberOfLines={1}>{fmtDate(r.at)}</Txt>
+                </View>
+              </Card>
+            );
+          }
           return (
             <Card onPress={id ? () => openItem(id) : undefined} style={{ gap: space.sm }}>
               <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'center' }}>
@@ -99,9 +113,9 @@ export default function Search() {
   if (desktop) {
     const field = (
       <View style={{ width: 440, flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: t.surface, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.md }}>
-        <Ionicons name="search" size={18} color={t.faint} />
+        <Ionicons name="search-outline" size={18} color={t.faint} />
         <TextInput value={q} onChangeText={setQ} autoFocus placeholder="Tasks, notes, files, messages" placeholderTextColor={t.faint} accessibilityLabel="Search" style={[{ flex: 1, minWidth: 0, color: t.text, fontFamily: content.regular, fontSize: 16 * t.scale, paddingVertical: 9 }, noOutline]} />
-        {q ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setQ('')} accessibilityLabel="Clear search" /> : null}
+        {q ? <Ionicons name="close-circle-outline" size={18} color={t.faint} onPress={() => setQ('')} accessibilityLabel="Clear search" /> : null}
       </View>
     );
     const kinds = (['task', 'note', 'message', 'file'] as const).map((k) => ({ kind: k, rows: list.filter((r) => r.kind === k) }));
@@ -139,7 +153,7 @@ export default function Search() {
     <View style={{ flex: 1 }}>
       <TopBar title="Search">
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: t.surface, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.md }}>
-          <Ionicons name="search" size={18} color={t.faint} />
+          <Ionicons name="search-outline" size={18} color={t.faint} />
           <TextInput
             value={q}
             onChangeText={setQ}
@@ -149,7 +163,7 @@ export default function Search() {
             returnKeyType="search"
             style={[{ flex: 1, color: t.text, fontFamily: content.regular, fontSize: 16 * t.scale, paddingVertical: 11 }, noOutline]}
           />
-          {q ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setQ('')} accessibilityLabel="Clear search" /> : null}
+          {q ? <Ionicons name="close-circle-outline" size={18} color={t.faint} onPress={() => setQ('')} accessibilityLabel="Clear search" /> : null}
         </View>
         <RoleFilterBar value={who} onChange={setWho} />
       </TopBar>

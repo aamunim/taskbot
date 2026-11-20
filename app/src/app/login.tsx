@@ -18,8 +18,8 @@ const SOFT = 'rgba(255,255,255,0.82)';
 
 const FEATURES: { icon: IconName; title: string; text: string }[] = [
   { icon: 'chatbubbles', title: 'Nothing gets lost', text: 'Every message, file and voice note from the group is kept.' },
-  { icon: 'sparkles', title: 'Sorted for you', text: 'Tasks, deadlines and notes are picked out automatically.' },
-  { icon: 'people', title: 'Boss and you, apart', text: 'See what was asked of you and what you promised.' },
+  { icon: 'sparkles-outline', title: 'Sorted for you', text: 'Tasks, deadlines and notes are picked out automatically.' },
+  { icon: 'people-outline', title: 'Boss and you, apart', text: 'See what was asked of you and what you promised.' },
 ];
 
 export default function Login() {
@@ -123,7 +123,7 @@ export default function Login() {
             </View>
             {message ? (
               <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: t.dangerSoft, borderRadius: radius.md, padding: space.md }}>
-                <Ionicons name="alert-circle" size={18} color={t.danger} />
+                <Ionicons name="alert-circle-outline" size={18} color={t.danger} />
                 <Txt variant="label" color={t.danger} style={{ flex: 1 }}>{message}</Txt>
               </View>
             ) : null}
@@ -137,12 +137,12 @@ export default function Login() {
                   <ActivityIndicator color={t.primary} />
                   <Txt variant="label" color={t.primary} style={{ flex: 1 }}>Press Start in the bot's chat in Telegram (it opened in a new tab). This page signs in on its own once you do.</Txt>
                 </View>
-                <Btn icon="paper-plane" label="Open Telegram again" onPress={() => Linking.openURL(pending.url)} />
+                <Btn icon="paper-plane-outline" label="Open Telegram again" onPress={() => Linking.openURL(pending.url)} />
                 <Btn kind="ghost" label="Cancel" onPress={() => setPending(null)} />
               </>
             ) : (
               <>
-                <Btn icon="paper-plane" label={busy ? 'Opening Telegram…' : 'Continue with Telegram'} onPress={begin} disabled={busy} />
+                <Btn icon="paper-plane-outline" label={busy ? 'Opening Telegram…' : 'Continue with Telegram'} onPress={begin} disabled={busy} />
                 <Txt variant="caption" sub style={{ textAlign: 'center' }}>You confirm once inside Telegram, then come back to this tab.</Txt>
               </>
             )}
@@ -178,7 +178,7 @@ export default function Login() {
       <View style={{ gap: space.md }}>
         {message ? (
           <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: 'rgba(0,0,0,0.28)', borderRadius: radius.md, padding: space.md }}>
-            <Ionicons name="alert-circle" size={18} color="#FFD0D8" />
+            <Ionicons name="alert-circle-outline" size={18} color="#FFD0D8" />
             <Txt variant="label" color="#FFFFFF" style={{ flex: 1 }}>{message}</Txt>
           </View>
         ) : null}
@@ -192,12 +192,12 @@ export default function Login() {
               <ActivityIndicator color="#FFFFFF" />
               <Txt variant="label" color="#FFFFFF" style={{ flex: 1 }}>Press Start in the bot's chat in Telegram, then come back here.</Txt>
             </View>
-            <Btn kind="inverse" icon="paper-plane" label="Open Telegram again" onPress={() => Linking.openURL(pending.url)} />
+            <Btn kind="inverse" icon="paper-plane-outline" label="Open Telegram again" onPress={() => Linking.openURL(pending.url)} />
             <Btn kind="ghost" label="Cancel" onPress={() => setPending(null)} style={{ backgroundColor: GLASS }} />
           </>
         ) : (
           <>
-            <Btn kind="inverse" icon="paper-plane" label={busy ? 'Opening Telegram…' : 'Continue with Telegram'} onPress={begin} disabled={busy} />
+            <Btn kind="inverse" icon="paper-plane-outline" label={busy ? 'Opening Telegram…' : 'Continue with Telegram'} onPress={begin} disabled={busy} />
             <Txt variant="caption" color={SOFT} style={{ textAlign: 'center' }}>No password. You confirm once inside Telegram.</Txt>
           </>
         )}

@@ -57,7 +57,7 @@ export function UpdateGate() {
         <LinearGradient colors={t.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, paddingTop: insets.top + space.xxl, paddingBottom: insets.bottom + space.xl, paddingHorizontal: space.xxl }}>
           <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: space.lg }}>
             <View style={{ width: 112, height: 112, borderRadius: 56, backgroundColor: 'rgba(255,255,255,0.16)', alignItems: 'center', justifyContent: 'center' }}>
-              <Ionicons name="sparkles" size={52} color="#FFFFFF" />
+              <Ionicons name="sparkles-outline" size={52} color="#FFFFFF" />
             </View>
             <Txt variant="display" color="#FFFFFF" style={{ textAlign: 'center', fontSize: 32 * t.scale, lineHeight: 40 * t.scale }}>Update ready</Txt>
             <Txt variant="body" color="rgba(255,255,255,0.88)" style={{ textAlign: 'center', maxWidth: 300 }}>
@@ -71,7 +71,7 @@ export function UpdateGate() {
               accessibilityRole="button"
               accessibilityLabel="Restart now"
               style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: space.md, height: 68, borderRadius: radius.lg, backgroundColor: '#FFFFFF' }, pressed && styles.pressed]}>
-              <Ionicons name="refresh" size={26} color={t.hero[0]} />
+              <Ionicons name="refresh-outline" size={26} color={t.hero[0]} />
               <Txt color={t.hero[0]} style={{ fontFamily: ui.extrabold, fontSize: 21 * t.scale, lineHeight: 28 * t.scale }}>Restart now</Txt>
             </Pressable>
             <Pressable onPress={dismissUpdate} accessibilityRole="button" style={({ pressed }) => [{ alignItems: 'center', paddingVertical: space.md }, pressed && styles.pressed]}>

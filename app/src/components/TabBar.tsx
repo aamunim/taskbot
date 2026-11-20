@@ -22,7 +22,7 @@ export function TabBar({ state, emitter, navigateToTab, inboxCount }: Props & { 
   const insets = useSafeAreaInsets();
   return (
     <View pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 14, paddingBottom: Math.max(insets.bottom, 12) }}>
-      <View style={[{ flexDirection: 'row', backgroundColor: t.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: t.border, padding: 6 }, elevation(t, 2)]}>
+      <View style={[{ flexDirection: 'row', backgroundColor: t.raised, borderRadius: radius.xl, borderWidth: 1, borderColor: t.border, padding: 6 }, elevation(t, 2)]}>
         {state.routes.map((route, index) => {
           const tab = TABS[route.name];
           if (!tab) return null;
@@ -42,7 +42,7 @@ export function TabBar({ state, emitter, navigateToTab, inboxCount }: Props & { 
               <View>
                 <Ionicons name={focused ? tab.active : tab.icon} size={22} color={focused ? t.primary : t.faint} />
                 {route.name === 'inbox' && inboxCount > 0 ? (
-                  <View style={{ position: 'absolute', top: -5, right: -11, minWidth: 17, height: 17, borderRadius: 9, paddingHorizontal: 4, backgroundColor: t.dangerSolid, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: t.surface }}>
+                  <View style={{ position: 'absolute', top: -5, right: -11, minWidth: 17, height: 17, borderRadius: 9, paddingHorizontal: 4, backgroundColor: t.dangerSolid, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: t.raised }}>
                     <Txt variant="overline" color="#FFFFFF" style={{ fontSize: 10, lineHeight: 12, letterSpacing: 0 }}>{inboxCount > 9 ? '9+' : inboxCount}</Txt>
                   </View>
                 ) : null}

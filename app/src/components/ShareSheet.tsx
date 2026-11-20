@@ -98,7 +98,7 @@ export function ShareHost() {
           <Txt variant="label" content sub numberOfLines={2} style={{ marginBottom: space.xs }}>{target.title}</Txt>
           {isFile && canShareFiles ? (
             <Option
-              icon={<Ionicons name="paper-plane" size={20} color={t.primary} />}
+              icon={<Ionicons name="paper-plane-outline" size={20} color={t.primary} />}
               title="Send the file"
               hint="WhatsApp, Messenger or any other app"
               busy={busy === 'file'}

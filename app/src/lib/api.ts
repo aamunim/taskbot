@@ -9,7 +9,7 @@ type Result<T> = { data: T; error: string | null };
 const ITEM_COLUMNS =
   'id,type,title,details,status,priority,due_at,due_all_day,due_text,tags,needs_review,confidence,' +
   'dismissed,pinned,user_note,chat_id,source_message_id,source_sender_tg_id,source_sender_name,' +
-  'completed_at,waiting_since,created_at,updated_at';
+  'completed_at,waiting_since,remind_at,created_at,updated_at';
 const FILE_COLUMNS = 'id,message_id,kind,file_name,mime_type,size_bytes,duration_seconds,storage_path,status,starred,created_at';
 const LINK_COLUMNS = 'id,message_id,url,domain,starred,created_at,title,description,image_url,favicon_url,meta_status';
 const SUBTASK_COLUMNS = 'id,item_id,title,done,position,created_at';
