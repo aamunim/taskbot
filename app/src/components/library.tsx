@@ -189,6 +189,52 @@ function useCopy(url: string) {
   return { copied, copy };
 }
 
+/** What the link is: the sender's own words around it, else the path, else the site. */
+export function linkLabel(link: LibLink): string {
+  const { host, rest } = splitUrl(link.url, link.domain);
+  const said = link.text?.replace(link.url, '').replace(/\s+/g, ' ').trim();
+  return said || (rest ? host + rest : host);
+}
+
+/**
+ * One line per link for scanning a long list: tap anywhere to open it,
+ * hold to copy. `showHost` is off when the list is already grouped by site.
+ */
+export function LinkRow({ link, onStar, showHost = true, last }: LinkProps & { showHost?: boolean; last?: boolean }) {
+  const t = useTheme();
+  const { role } = useData();
+  const { host } = splitUrl(link.url, link.domain);
+  const { copied, copy } = useCopy(link.url);
+  const r = role(link.sender_tg_id);
+  const who = r === 'boss' ? 'Boss' : r === 'me' ? 'Me' : (link.sender_name ?? 'Other');
+  return (
+    <Pressable
+      onPress={() => Linking.openURL(link.url)}
+      onLongPress={copy}
+      accessibilityRole="link"
+      accessibilityLabel={`Open ${linkLabel(link)}`}
+      accessibilityHint="Hold to copy the link"
+      style={({ pressed }) => [
+        { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 11, paddingHorizontal: space.md, minHeight: 60 },
+        !last && { borderBottomWidth: 1, borderBottomColor: t.border },
+        pressed && { backgroundColor: t.surfaceAlt },
+      ]}>
+      <DomainTile host={host} size={36} />
+      <View style={{ flex: 1 }}>
+        <Txt variant="body" content strong numberOfLines={1}>{linkLabel(link)}</Txt>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: roleColors(t, r).solid }} />
+          <Txt variant="caption" sub numberOfLines={1} style={{ flexShrink: 1 }}>
+            {copied ? 'Link copied' : [who, showHost ? host : null, fmtDate(link.sent_at)].filter(Boolean).join(' · ')}
+          </Txt>
+        </View>
+      </View>
+      <StarButton starred={link.starred} onPress={onStar} />
+      <Ionicons name="open-outline" size={18} color={t.primary} />
+    </Pressable>
+  );
+}
+
 export function LinkCard({ link, onStar }: LinkProps) {
   const t = useTheme();
   const { role } = useData();

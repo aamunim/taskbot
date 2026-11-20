@@ -1,18 +1,20 @@
+import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { RefreshControl, ScrollView, View, useWindowDimensions } from 'react-native';
-import { DocTile, FileListRow, LinkCard, LinkTile, PhotoTile, VoiceCard } from '@/components/library';
-import { Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionGroup, RoleFilterBar, SectionHeader, Sheet, Skeleton, styles, type IconName } from '@/components/ui';
+import { Pressable, RefreshControl, ScrollView, TextInput, View, useWindowDimensions } from 'react-native';
+import { DocTile, FileListRow, LinkCard, LinkRow, LinkTile, PhotoTile, VoiceCard, linkLabel } from '@/components/library';
+import { Card, Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionGroup, RoleFilterBar, SectionHeader, Sheet, Skeleton, styles, type IconName } from '@/components/ui';
 import * as api from '@/lib/api';
 import { useData } from '@/lib/data';
 import { dayHeading, fileExt, fileGroup, fileTitle, splitUrl } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
 import { ROLE_LABEL, matchesRole } from '@/lib/roles';
-import { space, useTheme } from '@/lib/theme';
+import { content, noOutline, radius, space, useTheme } from '@/lib/theme';
 import type { LibFile, LibLink, RoleFilter } from '@/lib/types';
 
 type Section = 'photo' | 'document' | 'voice' | 'link';
 type ViewMode = 'grid' | 'list';
+type LinkView = 'compact' | 'card' | 'grid';
 type Sort = 'new' | 'old' | 'name';
 type GroupBy = 'none' | 'date' | 'sender' | 'type';
 type Entry = { key: string; name: string; type: string; starred: boolean } & ({ file: LibFile; link?: undefined } | { link: LibLink; file?: undefined });
@@ -23,6 +25,7 @@ const SECTIONS: { value: Section; label: string; icon: IconName }[] = [
   { value: 'voice', label: 'Voice', icon: 'mic-outline' },
   { value: 'link', label: 'Links', icon: 'link-outline' },
 ];
+const OTHER_SITES = 'Other sites';
 const EMPTY: Record<Section, { icon: IconName; title: string }> = {
   photo: { icon: 'image-outline', title: 'No photos here' },
   document: { icon: 'document-text-outline', title: 'No documents here' },
@@ -48,6 +51,13 @@ export default function Library() {
   const [sort, setSort] = usePref<Sort>('lib:sort', 'new');
   const [groupBy, setGroupBy] = usePref<GroupBy>('lib:group', 'none');
   const [starFirst, setStarFirst] = usePref<'on' | 'off'>('lib:starred', 'on');
+  // Links are arranged separately from files: a dense list grouped by site by default.
+  const [linkView, setLinkView] = usePref<LinkView>('lib:link:view', 'compact');
+  const [linkGroup, setLinkGroup] = usePref<GroupBy>('lib:link:group', 'type');
+  const [linkQuery, setLinkQuery] = useState('');
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const isLinks = section === 'link';
+  const grouping = isLinks ? linkGroup : groupBy;
 
   const load = useCallback(async () => {
     const res = await api.fetchLibrary();
@@ -84,21 +94,26 @@ export default function Library() {
   };
 
   const visibleFiles = useMemo(() => files.filter((f) => matchesRole(role(f.sender_tg_id), who)), [files, role, who]);
-  const visibleLinks = useMemo(() => links.filter((l) => matchesRole(role(l.sender_tg_id), who)), [links, role, who]);
+  const roleLinks = useMemo(() => links.filter((l) => matchesRole(role(l.sender_tg_id), who)), [links, role, who]);
+  const visibleLinks = useMemo(() => {
+    const q = linkQuery.trim().toLowerCase();
+    if (!q) return roleLinks;
+    return roleLinks.filter((l) => `${l.url} ${l.text ?? ''} ${l.sender_name ?? ''}`.toLowerCase().includes(q));
+  }, [roleLinks, linkQuery]);
   const counts: Record<Section, number> = useMemo(
     () => ({
       photo: visibleFiles.filter((f) => fileGroup(f) === 'photo').length,
       document: visibleFiles.filter((f) => fileGroup(f) === 'document').length,
       voice: visibleFiles.filter((f) => fileGroup(f) === 'voice').length,
-      link: visibleLinks.length,
+      link: roleLinks.length,
     }),
-    [visibleFiles, visibleLinks],
+    [visibleFiles, roleLinks],
   );
 
   const groups = useMemo(() => {
     const entries: Entry[] =
       section === 'link'
-        ? visibleLinks.map((link) => ({ key: link.id, link, name: splitUrl(link.url, link.domain).host, type: splitUrl(link.url, link.domain).host, starred: link.starred }))
+        ? visibleLinks.map((link) => ({ key: link.id, link, name: linkLabel(link), type: splitUrl(link.url, link.domain).host, starred: link.starred }))
         : visibleFiles.filter((f) => fileGroup(f) === section).map((file) => ({ key: file.id, file, name: fileTitle(file), type: section === 'voice' ? 'Voice' : fileExt(file), starred: file.starred }));
     const at = (e: Entry) => (e.file ?? e.link).sent_at;
     entries.sort((a, b) => {
@@ -111,16 +126,26 @@ export default function Library() {
       const src = e.file ?? e.link;
       const r = role(src.sender_tg_id);
       const key =
-        groupBy === 'date' ? dayHeading(src.sent_at) : groupBy === 'sender' ? (r === 'other' ? (src.sender_name ?? ROLE_LABEL.other) : r === 'boss' ? 'From boss' : 'From me') : groupBy === 'type' ? e.type : '';
+        grouping === 'date' ? dayHeading(src.sent_at) : grouping === 'sender' ? (r === 'other' ? (src.sender_name ?? ROLE_LABEL.other) : r === 'boss' ? 'From boss' : 'From me') : grouping === 'type' ? e.type : '';
       out.set(key, [...(out.get(key) ?? []), e]);
     }
-    return [...out.entries()];
-  }, [section, visibleFiles, visibleLinks, sort, groupBy, starFirst, role]);
+    const list = [...out.entries()];
+    // Sites with the most links first, so the busiest sources are on top.
+    if (section === 'link' && grouping === 'type') {
+      // Sites with one link each would be a page of tiny groups; keep them together at the end.
+      const busy = list.filter(([, l]) => l.length > 1).sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+      const singles = list.filter(([, l]) => l.length === 1).flatMap(([, l]) => l);
+      if (!busy.length) return singles.length ? [['', singles] as [string, Entry[]]] : [];
+      return singles.length ? [...busy, [OTHER_SITES, singles] as [string, Entry[]]] : busy;
+    }
+    return list;
+  }, [section, visibleFiles, visibleLinks, sort, grouping, starFirst, role]);
 
   const contentWidth = width - space.lg * 2;
   const photoSize = Math.floor((contentWidth - space.sm * 2) / 3);
   const tileWidth = Math.floor((contentWidth - space.md) / 2);
-  const grid = mode === 'grid' && section !== 'voice';
+  const grid = isLinks ? linkView === 'grid' : mode === 'grid' && section !== 'voice';
+  const compactLinks = isLinks && linkView === 'compact';
 
   const renderEntry = (e: Entry) => {
     if (e.link) {
@@ -163,25 +188,79 @@ export default function Library() {
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm, paddingHorizontal: space.lg }}>
           {SECTIONS.map((s) => <Chip key={s.value} icon={s.icon} label={s.label} count={counts[s.value]} active={section === s.value} onPress={() => setSection(s.value)} />)}
         </ScrollView>
-        <View style={{ paddingHorizontal: space.lg, paddingTop: groupBy === 'none' ? space.lg : 0 }}>
+        {isLinks && links.length ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginHorizontal: space.lg, marginTop: space.md, backgroundColor: t.surface, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.md }}>
+            <Ionicons name="search" size={18} color={t.faint} />
+            <TextInput
+              value={linkQuery}
+              onChangeText={setLinkQuery}
+              placeholder="Find a link"
+              placeholderTextColor={t.faint}
+              autoCapitalize="none"
+              autoCorrect={false}
+              returnKeyType="search"
+              accessibilityLabel="Find a link"
+              style={[{ flex: 1, color: t.text, fontFamily: content.regular, fontSize: 16, paddingVertical: 10 }, noOutline]}
+            />
+            {linkQuery ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setLinkQuery('')} accessibilityLabel="Clear" /> : null}
+          </View>
+        ) : null}
+        <View style={{ paddingHorizontal: space.lg, paddingTop: groups.length && !groups[0][0] ? space.lg : 0 }}>
           <ErrorBanner text={error} />
           {loading ? <Skeleton /> : null}
-          {!loading && !groups.length ? <Empty icon={EMPTY[section].icon} title={EMPTY[section].title} text="Files and links shared in the group are collected here automatically." /> : null}
-          {groups.map(([title, list]) => (
-            <View key={title || 'all'}>
-              {title ? <SectionHeader title={title} count={list.length} /> : null}
-              <View style={grid ? { flexDirection: 'row', flexWrap: 'wrap', gap: section === 'photo' ? space.sm : space.md } : { gap: space.md }}>
-                {list.map(renderEntry)}
+          {!loading && !groups.length ? (
+            isLinks && linkQuery.trim() ? (
+              <Empty icon="search-outline" title="No matching links" text="Try a site name or a word from the message." />
+            ) : (
+              <Empty icon={EMPTY[section].icon} title={EMPTY[section].title} text="Files and links shared in the group are collected here automatically." />
+            )
+          ) : null}
+          {groups.map(([title, list]) => {
+            const closed = isLinks && !!title && !!collapsed[title];
+            return (
+              <View key={title || 'all'}>
+                {title && isLinks ? (
+                  <Pressable
+                    onPress={() => setCollapsed((c) => ({ ...c, [title]: !c[title] }))}
+                    accessibilityRole="button"
+                    accessibilityState={{ expanded: !closed }}
+                    accessibilityLabel={`${title}, ${list.length} links`}>
+                    <SectionHeader title={title} count={list.length} action={<Ionicons name={closed ? 'chevron-forward' : 'chevron-down'} size={16} color={t.faint} />} />
+                  </Pressable>
+                ) : title ? (
+                  <SectionHeader title={title} count={list.length} />
+                ) : null}
+                {closed ? null : compactLinks ? (
+                  <Card style={{ padding: 0, overflow: 'hidden' }}>
+                    {list.map((e, i) =>
+                      e.link ? (
+                        <LinkRow key={e.key} link={e.link} onStar={() => star('links', e.link.id, !e.link.starred)} showHost={grouping !== 'type' || !title || title === OTHER_SITES} last={i === list.length - 1} />
+                      ) : null,
+                    )}
+                  </Card>
+                ) : (
+                  <View style={grid ? { flexDirection: 'row', flexWrap: 'wrap', gap: section === 'photo' ? space.sm : space.md } : { gap: space.md }}>
+                    {list.map(renderEntry)}
+                  </View>
+                )}
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
       </ScrollView>
 
-      <Sheet visible={options} onClose={() => setOptions(false)} title="Arrange library">
-        <OptionGroup label="View" value={mode} onChange={setMode} options={[{ value: 'grid', label: 'Grid', icon: 'grid-outline' }, { value: 'list', label: 'List', icon: 'list-outline' }]} />
+      <Sheet visible={options} onClose={() => setOptions(false)} title={isLinks ? 'Arrange links' : 'Arrange library'}>
+        {isLinks ? (
+          <OptionGroup label="View" value={linkView} onChange={setLinkView} options={[{ value: 'compact', label: 'List', icon: 'reorder-four-outline' }, { value: 'card', label: 'Cards', icon: 'list-outline' }, { value: 'grid', label: 'Grid', icon: 'grid-outline' }]} />
+        ) : (
+          <OptionGroup label="View" value={mode} onChange={setMode} options={[{ value: 'grid', label: 'Grid', icon: 'grid-outline' }, { value: 'list', label: 'List', icon: 'list-outline' }]} />
+        )}
         <OptionGroup label="Sort" value={sort} onChange={setSort} options={[{ value: 'new', label: 'Newest' }, { value: 'old', label: 'Oldest' }, { value: 'name', label: 'Name' }]} />
-        <OptionGroup label="Group by" value={groupBy} onChange={setGroupBy} options={[{ value: 'none', label: 'None' }, { value: 'date', label: 'Date' }, { value: 'sender', label: 'Sender' }, { value: 'type', label: 'Type' }]} />
+        {isLinks ? (
+          <OptionGroup label="Group by" value={linkGroup} onChange={setLinkGroup} options={[{ value: 'type', label: 'Site' }, { value: 'date', label: 'Date' }, { value: 'sender', label: 'Sender' }, { value: 'none', label: 'None' }]} />
+        ) : (
+          <OptionGroup label="Group by" value={groupBy} onChange={setGroupBy} options={[{ value: 'none', label: 'None' }, { value: 'date', label: 'Date' }, { value: 'sender', label: 'Sender' }, { value: 'type', label: 'Type' }]} />
+        )}
         <OptionGroup label="Starred" value={starFirst} onChange={setStarFirst} options={[{ value: 'on', label: 'Starred first', icon: 'star' }, { value: 'off', label: 'Mixed in' }]} />
       </Sheet>
     </View>
