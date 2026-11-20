@@ -11,6 +11,8 @@ Telegram গ্রুপ → webhook → Supabase Edge Function
                     Expo অ্যাপ + Telegram-এ ব্যক্তিগত রিমাইন্ডার
 ```
 
+নিজের জন্য আলাদা একটি কপি চালু করতে চাইলে ধাপে ধাপে নির্দেশনা: [docs/SETUP-GUIDE.md](docs/SETUP-GUIDE.md)
+
 ## ফোল্ডার
 
 | পথ | কী আছে |
