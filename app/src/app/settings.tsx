@@ -153,6 +153,56 @@ export default function SettingsScreen() {
           {cfg.notify_boss_waiting ? <MessageField label="Sent message" value={cfg.boss_waiting_message} fallback="📨 Sent for your review: {task}" onSave={(v) => void saveConfig({ boss_waiting_message: v })} /> : null}
         </Card>
   );
+  const pickReportTime = () => {
+    if (!cfg) return;
+    const [h, m] = cfg.weekly_report_time.split(':').map(Number);
+    const value = new Date();
+    value.setHours(h, m, 0, 0);
+    pickDateTime({
+      value,
+      mode: 'time',
+      onChange: (d) => saveConfig({ weekly_report_time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:00` }),
+    });
+  };
+  const automation = (
+        <Card style={{ gap: space.lg }}>
+          <Txt variant="caption" sub>The bot prepares these messages for the group and asks you first, in your private Telegram chat with it. Nothing is posted until you tap “Send to group”, except follow-ups when you choose Automatic.</Txt>
+          <Row label="Ask about unclear instructions" hint="Suggests a question for your boss when a task cannot be started as written">
+            <Toggle label="Ask about unclear instructions" value={cfg.clarify_enabled} onChange={(v) => void saveConfig({ clarify_enabled: v })} />
+          </Row>
+          <View style={{ gap: space.sm }}>
+            <Txt variant="body" strong>Follow up when your boss has not replied</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {FOLLOWUP_MODES.map((m) => <Chip key={m.value} label={m.label} active={cfg.followup_mode === m.value} onPress={() => saveConfig({ followup_mode: m.value })} />)}
+            </View>
+            <Txt variant="caption" sub>{FOLLOWUP_MODES.find((m) => m.value === cfg.followup_mode)?.hint}</Txt>
+          </View>
+          {cfg.followup_mode !== 'off' ? (
+            <>
+              <View style={{ gap: space.sm }}>
+                <Txt variant="body" strong>After waiting</Txt>
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+                  {FOLLOWUP_DAYS.map((d) => <Chip key={d} label={plural(d, 'day')} active={cfg.followup_days === d} onPress={() => saveConfig({ followup_days: d })} />)}
+                </View>
+              </View>
+              <MessageField label="Follow-up message" value={cfg.followup_message} fallback="⏳ A gentle reminder about this: {task}" onSave={(v) => void saveConfig({ followup_message: v })} />
+            </>
+          ) : null}
+          <Row label="Weekly report for your boss" hint="Done, in progress and waiting, for the last 7 days">
+            <Toggle label="Weekly report" value={cfg.weekly_report_enabled} onChange={(v) => void saveConfig({ weekly_report_enabled: v })} />
+          </Row>
+          {cfg.weekly_report_enabled ? (
+            <View style={{ gap: space.sm }}>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+                {WEEKDAYS.map((d, i) => <Chip key={d} label={d} active={cfg.weekly_report_day === i} onPress={() => saveConfig({ weekly_report_day: i })} />)}
+              </View>
+              <Row label="Report time">
+                <Btn small kind="soft" icon="time-outline" label={timeLabel(cfg.weekly_report_time)} onPress={pickReportTime} />
+              </Row>
+            </View>
+          ) : null}
+        </Card>
+  );
   const reminders = (
         <Card style={{ gap: space.lg }}>
           <Txt variant="caption" sub>Reminders arrive as private Telegram messages from the bot.</Txt>
@@ -257,6 +307,8 @@ export default function SettingsScreen() {
               {people}
               <SectionHeader title="Tell your boss" />
               {tellBoss}
+              <SectionHeader title="Automation" />
+              {automation}
               <SectionHeader title="Reminders" />
               {reminders}
             </View>
@@ -292,6 +344,8 @@ export default function SettingsScreen() {
         {people}
         <SectionHeader title="Tell your boss" />
         {tellBoss}
+        <SectionHeader title="Automation" />
+        {automation}
         <SectionHeader title="Appearance" />
         {appearanceCard}
         <SectionHeader title="Reminders" />
@@ -308,6 +362,14 @@ export default function SettingsScreen() {
     </View>
   );
 }
+
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const FOLLOWUP_DAYS = [1, 2, 3, 5, 7];
+const FOLLOWUP_MODES: { value: 'off' | 'ask' | 'auto'; label: string; hint: string }[] = [
+  { value: 'off', label: 'Off', hint: 'The bot only reminds you privately; you follow up yourself.' },
+  { value: 'ask', label: 'Ask me first', hint: 'The bot shows you the reminder and posts it only if you approve.' },
+  { value: 'auto', label: 'Automatic', hint: 'The bot posts the reminder in the group by itself and tells you afterwards.' },
+];
 
 /** Editable message text; `{task}` is replaced by the task's title. Saved when the field loses focus. */
 function MessageField({ label, value, fallback, onSave }: { label: string; value: string; fallback: string; onSave: (v: string) => void }) {

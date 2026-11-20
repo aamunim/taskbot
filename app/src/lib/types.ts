@@ -138,6 +138,14 @@ export type AppConfig = {
   notify_boss_waiting: boolean;
   boss_done_message: string;
   boss_waiting_message: string;
+  clarify_enabled: boolean;
+  followup_mode: 'off' | 'ask' | 'auto';
+  followup_days: number;
+  followup_message: string;
+  weekly_report_enabled: boolean;
+  /** 0 = Sunday … 6 = Saturday */
+  weekly_report_day: number;
+  weekly_report_time: string;
   last_webhook_at: string | null;
   last_processed_at: string | null;
   last_error: string | null;
