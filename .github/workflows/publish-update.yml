@@ -21,6 +21,8 @@ jobs:
       EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
       EXPO_PUBLIC_SUPABASE_URL: https://${{ secrets.SUPABASE_PROJECT_REF }}.supabase.co
       EXPO_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+      # Where the web version lives, so the app can build the link to the boss's page.
+      EXPO_PUBLIC_WEB_URL: https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}
       UPDATE_MESSAGE: ${{ inputs.message }}
     steps:
       - uses: actions/checkout@v4

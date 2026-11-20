@@ -9,7 +9,10 @@ import { Avatar, Btn, Card, Chip, ErrorBanner, SectionHeader, Sheet, Skeleton, T
 import * as api from '@/lib/api';
 import { Page } from '@/components/desktop';
 import { useData } from '@/lib/data';
-import { useLayout } from '@/lib/layout';
+import { useLayout, webBaseUrl } from '@/lib/layout';
+import { openShare } from '@/components/ShareSheet';
+import * as Clipboard from 'expo-clipboard';
+import * as Linking from 'expo-linking';
 import { DEMO } from '@/lib/demo';
 import { fmtDateTime, plural } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
@@ -159,6 +162,58 @@ export default function SettingsScreen() {
             <Toggle label="Tell boss when sent" value={cfg.notify_boss_waiting} onChange={(v) => void saveConfig({ notify_boss_waiting: v })} />
           </Row>
           {cfg.notify_boss_waiting ? <MessageField label="Sent message" value={cfg.boss_waiting_message} fallback="📨 Sent for your review: {task}" onSave={(v) => void saveConfig({ boss_waiting_message: v })} /> : null}
+        </Card>
+  );
+  const [share, setShare] = useState<api.ShareLink | null>(null);
+  const [shareBusy, setShareBusy] = useState(false);
+  const [shareCopied, setShareCopied] = useState(false);
+  useFocusEffect(
+    useCallback(() => {
+      api.fetchShareLink().then(setShare);
+    }, []),
+  );
+  const base = webBaseUrl();
+  const shareUrl = share && base ? `${base}/shared/${share.token}` : null;
+  const makeShare = async (days: number | null) => {
+    setShareBusy(true);
+    setShare(await api.createShareLink(days));
+    setShareBusy(false);
+    setShareCopied(false);
+  };
+  const bossPage = (
+        <Card style={{ gap: space.lg }}>
+          <Txt variant="caption" sub>A private web page where your boss can browse and download the files and links they sent. They see nothing of yours, and cannot change anything. Anyone who has the link can open it, so share it only with your boss.</Txt>
+          {share ? (
+            <>
+              <View style={{ gap: 4 }}>
+                <Txt variant="body" strong>Link is active</Txt>
+                <Txt variant="caption" sub>
+                  {share.expires_at ? `Expires ${fmtDateTime(share.expires_at)}` : 'Does not expire'} · {share.open_count ? `opened ${plural(share.open_count, 'time')}, last ${fmtDateTime(share.last_opened_at ?? share.created_at)}` : 'not opened yet'}
+                </Txt>
+                {shareUrl ? <Txt variant="caption" sub numberOfLines={1} selectable>{shareUrl}</Txt> : <Txt variant="caption" color={t.danger}>The web address is not set in this build, so the link cannot be shown here. Open Settings in the web version to copy it.</Txt>}
+              </View>
+              {shareUrl ? (
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+                  <Btn small kind="soft" icon={shareCopied ? 'checkmark' : 'copy-outline'} label={shareCopied ? 'Copied' : 'Copy link'} onPress={async () => { await Clipboard.setStringAsync(shareUrl); setShareCopied(true); }} />
+                  <Btn small kind="soft" icon="share-social-outline" label="Send to boss" onPress={() => openShare({ kind: 'link', title: 'Your files page', url: shareUrl })} />
+                  <Btn small kind="soft" icon="open-outline" label="Preview" onPress={() => void Linking.openURL(shareUrl)} />
+                </View>
+              ) : null}
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+                <Btn small kind="ghost" icon="refresh-outline" label="Replace with a new link" disabled={shareBusy} onPress={() => confirmAction('Replace link', 'The current link will stop working at once. Create a new one?', 'Replace', () => void makeShare(null))} />
+                <Btn small kind="danger" icon="close-circle-outline" label="Turn off" disabled={shareBusy} onPress={() => confirmAction('Turn off the page', 'Your boss will no longer be able to open the page. Turn it off?', 'Turn off', async () => { await api.revokeShareLinks(); setShare(null); })} />
+              </View>
+            </>
+          ) : (
+            <View style={{ gap: space.sm }}>
+              <Txt variant="body" strong>Create a link that</Txt>
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+                <Btn small icon="link-outline" label="Never expires" disabled={shareBusy} onPress={() => void makeShare(null)} />
+                <Btn small kind="soft" label="Lasts 30 days" disabled={shareBusy} onPress={() => void makeShare(30)} />
+                <Btn small kind="soft" label="Lasts 7 days" disabled={shareBusy} onPress={() => void makeShare(7)} />
+              </View>
+            </View>
+          )}
         </Card>
   );
   const pickReportTime = () => {
@@ -317,6 +372,8 @@ export default function SettingsScreen() {
               {tellBoss}
               <SectionHeader title="Automation" />
               {automation}
+              <SectionHeader title="Page for your boss" />
+              {bossPage}
               <SectionHeader title="Reminders" />
               {reminders}
             </View>
@@ -354,6 +411,8 @@ export default function SettingsScreen() {
         {tellBoss}
         <SectionHeader title="Automation" />
         {automation}
+        <SectionHeader title="Page for your boss" />
+        {bossPage}
         <SectionHeader title="Appearance" />
         {appearanceCard}
         <SectionHeader title="Reminders" />

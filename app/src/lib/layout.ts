@@ -33,3 +33,19 @@ export function useLayout() {
 export function useAppWidth(): number {
   return useLayout().pageWidth;
 }
+
+/**
+ * Public address of the web version, e.g. https://name.github.io/taskbot. In a
+ * browser it is where the page is served from; the Android app gets it at build time.
+ */
+export function webBaseUrl(): string | null {
+  const configured = process.env.EXPO_PUBLIC_WEB_URL;
+  if (configured) return configured.replace(/\/+$/, '');
+  if (typeof window !== 'undefined' && window.location?.origin?.startsWith('http')) {
+    return `${window.location.origin}${WEB_BASE_PATH}`;
+  }
+  return null;
+}
+
+/** Must match experiments.baseUrl in app.json. */
+export const WEB_BASE_PATH = '/taskbot';

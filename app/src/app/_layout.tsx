@@ -6,7 +6,7 @@ import {
   PlusJakartaSans_800ExtraBold,
 } from '@expo-google-fonts/plus-jakarta-sans';
 import { useFonts } from 'expo-font';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider, usePathname } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
@@ -39,7 +39,9 @@ function Routes({ ready }: { ready: boolean }) {
   const finish = useCallback(() => setIntro(false), []);
   const { desktop } = useLayout();
   // Desktop: sidebar, page, detail pane across the whole window. Otherwise one phone-width column.
-  const shell = desktop && signedIn;
+  // The boss's shared page stands alone: no sidebar or panes, whoever opens it.
+  const publicPage = usePathname().startsWith('/shared');
+  const shell = desktop && signedIn && !publicPage;
 
   if (!ready || loading) return null;
   return (
@@ -60,6 +62,8 @@ function Routes({ ready }: { ready: boolean }) {
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="login" />
         </Stack.Protected>
+        {/* Open to anyone holding a valid share link. */}
+        <Stack.Screen name="shared/[token]" />
       </Stack>
       <GalleryHost />
       <ShareHost />

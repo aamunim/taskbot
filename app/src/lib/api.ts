@@ -292,3 +292,81 @@ export async function sendBossNotices(): Promise<void> {
     body: '{}',
   }).catch(() => {});
 }
+
+// ---------------------------------------------------------------- the boss's page
+
+export type ShareLink = {
+  id: string;
+  token: string;
+  created_at: string;
+  expires_at: string | null;
+  last_opened_at: string | null;
+  open_count: number;
+};
+
+const SHARE_COLUMNS = 'id,token,created_at,expires_at,last_opened_at,open_count';
+
+/** The link currently in force, if any (not revoked, not expired). */
+export async function fetchShareLink(): Promise<ShareLink | null> {
+  if (DEMO) return demoApi.shareLink();
+  const { data } = await supabase.from('share_links').select(SHARE_COLUMNS).is('revoked_at', null)
+    .order('created_at', { ascending: false }).limit(1).overrideTypes<ShareLink[], { merge: false }>();
+  const link = data?.[0] ?? null;
+  return link && (!link.expires_at || new Date(link.expires_at).getTime() > Date.now()) ? link : null;
+}
+
+export async function revokeShareLinks(): Promise<void> {
+  if (DEMO) return demoApi.revokeShareLink();
+  await supabase.from('share_links').update({ revoked_at: new Date().toISOString() }).is('revoked_at', null);
+}
+
+/** Replaces any earlier link with a fresh one; older links stop working at once. */
+export async function createShareLink(days: number | null): Promise<ShareLink | null> {
+  if (DEMO) return demoApi.createShareLink(days);
+  await revokeShareLinks();
+  const expires_at = days ? new Date(Date.now() + days * 86400_000).toISOString() : null;
+  const { data } = await supabase.from('share_links').insert({ expires_at }).select(SHARE_COLUMNS).single().overrideTypes<ShareLink, { merge: false }>();
+  return data ?? null;
+}
+
+export type SharedFile = {
+  id: string;
+  kind: string;
+  file_name: string | null;
+  mime_type: string | null;
+  size_bytes: number | null;
+  duration_seconds: number | null;
+  sent_at: string;
+  caption: string | null;
+  transcript: string | null;
+  url: string | null;
+};
+export type SharedLink = {
+  id: string;
+  url: string;
+  domain: string | null;
+  title: string | null;
+  description: string | null;
+  image_url: string | null;
+  favicon_url: string | null;
+  sent_at: string;
+  said: string | null;
+};
+export type SharedLibrary = { boss_name: string | null; files: SharedFile[]; links: SharedLink[] };
+
+/** What a share link shows. `invalid` covers a wrong, revoked or expired link alike. */
+export async function fetchShared(token: string): Promise<{ data: SharedLibrary | null; error: 'invalid' | 'failed' | null }> {
+  if (DEMO) return { data: await demoApi.shared(), error: null };
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${SUPABASE_ANON_KEY}` },
+      body: JSON.stringify({ token }),
+    });
+    if (res.status === 404) return { data: null, error: 'invalid' };
+    if (!res.ok) return { data: null, error: 'failed' };
+    return { data: (await res.json()) as SharedLibrary, error: null };
+  } catch {
+    return { data: null, error: 'failed' };
+  }
+}

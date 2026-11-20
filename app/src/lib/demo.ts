@@ -313,7 +313,36 @@ const SMALL_TALK: TimelineMessage[] = [
   chat('c4', OTHER, 29, 'আমি কাল ছুটিতে থাকব, কিছু লাগলে রাফিকে বলবেন।'),
 ];
 
+let demoShare: { id: string; token: string; created_at: string; expires_at: string | null; last_opened_at: string | null; open_count: number } | null = {
+  id: 'share-1', token: 'd3m0'.repeat(16), created_at: ago(72), expires_at: null, last_opened_at: ago(5), open_count: 4,
+};
+
 export const demoApi = {
+  shareLink: () => delay(demoShare),
+  revokeShareLink: async () => {
+    demoShare = null;
+  },
+  createShareLink: (days: number | null) => {
+    demoShare = {
+      id: `share-${Date.now()}`, token: 'n3wl1nk0'.repeat(8), created_at: new Date().toISOString(),
+      expires_at: days ? new Date(Date.now() + days * 86400_000).toISOString() : null, last_opened_at: null, open_count: 0,
+    };
+    return delay(demoShare);
+  },
+  /** What the boss's page shows: only what the boss sent. */
+  shared: () =>
+    delay({
+      boss_name: BOSS_NAME,
+      files: files.filter((f) => f.sender_tg_id === BOSS).map((f) => ({
+        id: f.id, kind: f.kind, file_name: f.file_name, mime_type: f.mime_type, size_bytes: f.size_bytes,
+        duration_seconds: f.duration_seconds, sent_at: f.sent_at, caption: f.text, transcript: f.transcript,
+        url: f.status === 'stored' && f.storage_path ? (demoSignedUrl(f.storage_path) ?? 'https://example.com/file') : null,
+      })),
+      links: links.filter((l) => l.sender_tg_id === BOSS).map((l) => ({
+        id: l.id, url: l.url, domain: l.domain, title: l.title, description: l.description,
+        image_url: l.image_url, favicon_url: l.favicon_url, sent_at: l.sent_at, said: l.text,
+      })),
+    }),
   fetchItems: () => delay(items.filter((i) => !i.dismissed).map(withSteps)),
   fetchItem: (id: string) => delay(items.find((i) => i.id === id) ?? null),
   fetchSubtasks: (itemId: string) => delay(subtasks.filter((x) => x.item_id === itemId).sort((a, b) => a.position - b.position)),
