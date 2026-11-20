@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
-import { router } from 'expo-router';
-import { useEffect, useRef, type ReactNode } from 'react';
+import { router, usePathname } from 'expo-router';
+import { Children, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Animated,
   Modal,
@@ -10,6 +10,7 @@ import {
   StyleSheet,
   Switch,
   Text,
+  TextInput,
   View,
   type StyleProp,
   type TextProps,
@@ -17,8 +18,9 @@ import {
   type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useLayout } from '@/lib/layout';
 import { ROLE_LABEL, roleColors } from '@/lib/roles';
-import { content, elevation, radius, space, ui, useTheme } from '@/lib/theme';
+import { content, elevation, noOutline, radius, space, ui, useTheme } from '@/lib/theme';
 import type { Role, RoleFilter } from '@/lib/types';
 
 export type IconName = keyof typeof Ionicons.glyphMap;
@@ -60,18 +62,24 @@ export function Txt({ style, variant = 'body', content: isContent, sub, color, s
 
 // ------------------------------------------------------------------ surfaces
 
-export function Card({ children, style, onPress, onLongPress, flat }: {
+/** Pressable state on the web also reports the pointer hovering. */
+export const isHovered = (state: object) => !!(state as { hovered?: boolean }).hovered;
+
+export function Card({ children, style, onPress, onLongPress, flat, selected }: {
   children: ReactNode;
   style?: StyleProp<ViewStyle>;
   onPress?: () => void;
   onLongPress?: () => void;
   flat?: boolean;
+  /** Marks the card whose detail is open beside the list (desktop). */
+  selected?: boolean;
 }) {
   const t = useTheme();
   const base: StyleProp<ViewStyle> = [styles.card, { backgroundColor: t.surface, borderColor: t.border }, !flat && elevation(t), style];
-  if (!onPress) return <View style={base}>{children}</View>;
+  const ring = selected ? ({ boxShadow: `0 0 0 2px ${t.primary}` } as object) : null;
+  if (!onPress) return <View style={[base, ring]}>{children}</View>;
   return (
-    <Pressable onPress={onPress} onLongPress={onLongPress} style={({ pressed }) => [base, pressed && styles.pressed]}>
+    <Pressable onPress={onPress} onLongPress={onLongPress} style={(s) => [base, isHovered(s) && !flat && [elevation(t, 2), { borderColor: t.faint }], ring, s.pressed && styles.pressed]}>
       {children}
     </Pressable>
   );
@@ -96,7 +104,7 @@ export function Btn({ label, onPress, kind = 'primary', disabled, small, icon, s
       onPress={onPress}
       disabled={disabled}
       accessibilityRole="button"
-      style={({ pressed }) => [styles.btn, small && styles.btnSmall, { backgroundColor: bg, opacity: disabled ? 0.45 : 1 }, pressed && styles.pressed, style]}>
+      style={(s) => [styles.btn, small && styles.btnSmall, { backgroundColor: bg, opacity: disabled ? 0.45 : isHovered(s) ? 0.88 : 1 }, s.pressed && styles.pressed, style]}>
       {icon ? <Ionicons name={icon} size={small ? 15 : 18} color={fg} /> : null}
       <Text style={{ color: fg, fontFamily: ui.bold, fontSize: (small ? 13 : 15) * t.scale, lineHeight: Math.round((small ? 18 : 20) * t.scale) }}>{label}</Text>
     </Pressable>
@@ -118,7 +126,8 @@ export function IconBtn({ icon, onPress, label, color, bg, size = 40 }: {
       hitSlop={6}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={({ pressed }) => [{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: bg ?? t.surfaceAlt }, pressed && styles.pressed]}>
+      {...({ title: label } as object)}
+      style={(s) => [{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: bg ?? t.surfaceAlt }, isHovered(s) && ({ boxShadow: `0 0 0 2px ${t.border}` } as object), s.pressed && styles.pressed]}>
       <Ionicons name={icon} size={Math.round(size * 0.5)} color={color ?? t.text} />
     </Pressable>
   );
@@ -142,7 +151,7 @@ export function Chip({ label, active, onPress, icon, count, content: isContent, 
       disabled={!onPress}
       accessibilityRole="button"
       accessibilityState={{ selected: !!active }}
-      style={({ pressed }) => [styles.chip, { backgroundColor: active ? t.primaryBg : t.surface, borderColor: active ? t.primaryBg : t.border }, pressed && styles.pressed]}>
+      style={(s) => [styles.chip, { backgroundColor: active ? t.primaryBg : isHovered(s) ? t.surfaceAlt : t.surface, borderColor: active ? t.primaryBg : t.border }, s.pressed && styles.pressed]}>
       {dot ? <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: dot, borderWidth: 1.5, borderColor: active ? t.onPrimary : 'transparent' }} /> : null}
       {icon ? <Ionicons name={icon} size={15} color={active ? t.onPrimary : t.sub} /> : null}
       <Txt variant="label" content={isContent} color={fg}>{label}</Txt>
@@ -167,6 +176,7 @@ export function Segments<T extends string>({ options, value, onChange }: {
   onChange: (v: T) => void;
 }) {
   const t = useTheme();
+  const { desktop } = useLayout();
   return (
     <View style={[styles.segments, { backgroundColor: t.surfaceAlt }]}>
       {options.map((o) => {
@@ -177,7 +187,7 @@ export function Segments<T extends string>({ options, value, onChange }: {
             onPress={() => onChange(o.value)}
             accessibilityRole="button"
             accessibilityState={{ selected: on }}
-            style={[styles.segment, on && [{ backgroundColor: t.surface }, elevation(t)]]}>
+            style={(s) => [styles.segment, desktop && { paddingHorizontal: 14, flexBasis: 'auto', flexShrink: 0 }, on ? [{ backgroundColor: t.surface }, elevation(t)] : isHovered(s) && { backgroundColor: t.border }]}>
             {o.dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: o.dot }} /> : null}
             <Txt variant="label" color={on ? t.text : t.sub} numberOfLines={1}>{o.label}</Txt>
             {o.count != null ? <Txt variant="caption" color={on ? t.primary : t.faint}>{o.count}</Txt> : null}
@@ -246,9 +256,60 @@ export function Toggle({ value, onChange, label }: { value: boolean; onChange: (
 
 // ------------------------------------------------------------------ layout
 
+/** Search box in the desktop top bar: Enter opens the search page with the words typed. */
+export function SearchField({ width = 250 }: { width?: number }) {
+  const t = useTheme();
+  const [q, setQ] = useState('');
+  const go = () => {
+    router.push({ pathname: '/search', params: q.trim() ? { q: q.trim() } : {} });
+    setQ('');
+  };
+  return (
+    <View style={{ width, flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: t.surface, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.md }}>
+      <Ionicons name="search" size={16} color={t.faint} />
+      <TextInput
+        value={q}
+        onChangeText={setQ}
+        onSubmitEditing={go}
+        placeholder="Search everything"
+        placeholderTextColor={t.faint}
+        returnKeyType="search"
+        accessibilityLabel="Search everything"
+        style={[{ flex: 1, minWidth: 0, color: t.text, fontFamily: content.regular, fontSize: 15 * t.scale, paddingVertical: 8 }, noOutline]}
+      />
+    </View>
+  );
+}
+
+/** Desktop page header: title, filters inline, actions and search on the right. */
+function DesktopBar({ title, subtitle, back, actions, children }: { title?: string; subtitle?: string; back?: boolean; actions?: ReactNode; children?: ReactNode }) {
+  const t = useTheme();
+  const onSearch = usePathname() === '/search';
+  // On a narrow desktop window the bar keeps its room for the filters; Search stays in the sidebar.
+  const { pageWidth } = useLayout();
+  const showSearch = !onSearch && pageWidth >= 900;
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: space.lg, rowGap: space.md, paddingHorizontal: space.xxl, paddingTop: space.xl, paddingBottom: space.md }}>
+      {back ? <IconBtn icon="chevron-back" label="Back" size={36} onPress={() => (router.canGoBack() ? router.back() : router.replace('/'))} bg={t.surface} /> : null}
+      {title ? (
+        <View style={{ marginRight: space.sm, flexShrink: 1 }}>
+          <Txt variant="title" style={{ fontFamily: ui.extrabold }} numberOfLines={1}>{title}</Txt>
+          {subtitle ? <Txt variant="caption" sub>{subtitle}</Txt> : null}
+        </View>
+      ) : null}
+      {Children.map(children, (child) => (child ? <View style={{ flexShrink: 0 }}>{child}</View> : null))}
+      <View style={{ flex: 1 }} />
+      {actions}
+      {showSearch ? <SearchField /> : null}
+    </View>
+  );
+}
+
 /** Large in-screen header used by the tab screens. */
 export function Header({ title, subtitle, actions, children }: { title: string; subtitle?: string; actions?: ReactNode; children?: ReactNode }) {
   const insets = useSafeAreaInsets();
+  const { desktop } = useLayout();
+  if (desktop) return <DesktopBar title={title} subtitle={subtitle} actions={actions}>{children}</DesktopBar>;
   return (
     <View style={{ paddingTop: insets.top + space.lg, paddingHorizontal: space.lg, paddingBottom: space.sm, gap: space.md }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
@@ -264,9 +325,11 @@ export function Header({ title, subtitle, actions, children }: { title: string; 
 }
 
 /** Compact header with a back button for pushed screens. */
-export function TopBar({ title, right, children }: { title?: string; right?: ReactNode; children?: ReactNode }) {
+export function TopBar({ title, right, children, noBack }: { title?: string; right?: ReactNode; children?: ReactNode; /** Desktop: a page reached from the sidebar needs no back button. */ noBack?: boolean }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const { desktop } = useLayout();
+  if (desktop) return <DesktopBar title={title} back={!noBack} actions={right}>{children}</DesktopBar>;
   return (
     <View style={{ paddingTop: insets.top + space.sm, paddingHorizontal: space.lg, paddingBottom: space.sm, gap: space.md, backgroundColor: t.bg }}>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
@@ -279,8 +342,11 @@ export function TopBar({ title, right, children }: { title?: string; right?: Rea
   );
 }
 
+/** Search and Settings shortcuts in a phone header; on desktop they live in the sidebar and top bar. */
 export function GlobalActions() {
   const t = useTheme();
+  const { desktop } = useLayout();
+  if (desktop) return null;
   return (
     <View style={{ flexDirection: 'row', gap: space.sm }}>
       <IconBtn icon="search" label="Search" onPress={() => router.push('/search')} bg={t.surface} />
@@ -357,6 +423,24 @@ export function Skeleton({ rows = 4, height = 84 }: { rows?: number; height?: nu
 export function Sheet({ visible, onClose, title, children }: { visible: boolean; onClose: () => void; title: string; children: ReactNode }) {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const { desktop } = useLayout();
+  if (desktop) {
+    // A centred dialog instead of a full-width bottom sheet. Esc closes it (onRequestClose).
+    return (
+      <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xxl }}>
+          <Pressable accessibilityLabel="Close" onPress={onClose} style={[StyleSheet.absoluteFill, { backgroundColor: t.overlay }, { cursor: 'default' } as object]} />
+          <View style={[{ width: '100%', maxWidth: 520, maxHeight: '86%', backgroundColor: t.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: t.border, paddingVertical: space.xl }, elevation(t, 2)]} accessibilityRole={'dialog' as never}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: space.xxl, marginBottom: space.sm }}>
+              <Txt variant="title" style={{ flex: 1 }}>{title}</Txt>
+              <IconBtn icon="close" label="Close" onPress={onClose} size={36} />
+            </View>
+            <ScrollView contentContainerStyle={{ paddingHorizontal: space.xxl, paddingBottom: space.sm }}>{children}</ScrollView>
+          </View>
+        </View>
+      </Modal>
+    );
+  }
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose} statusBarTranslucent>
       <View style={{ flex: 1, justifyContent: 'flex-end' }}>

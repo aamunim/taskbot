@@ -9,7 +9,8 @@ import { Btn, Txt, type IconName } from '@/components/ui';
 import { useAuth } from '@/lib/auth';
 import { DEMO } from '@/lib/demo';
 import { isConfigured, pollLogin, startLogin, supabase } from '@/lib/supabase';
-import { radius, space, useTheme } from '@/lib/theme';
+import { useLayout } from '@/lib/layout';
+import { elevation, radius, space, useTheme } from '@/lib/theme';
 
 type Pending = { code: string; secret: string; url: string };
 const GLASS = 'rgba(255,255,255,0.14)';
@@ -29,6 +30,7 @@ export default function Login() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const checking = useRef(false);
+  const { desktop } = useLayout();
 
   const check = useCallback(async (p: Pending) => {
     if (checking.current) return;
@@ -86,6 +88,69 @@ export default function Login() {
       setBusy(false);
     }
   };
+
+  if (desktop) {
+    // Split screen: what the app is on the left, the sign-in card on the right.
+    return (
+      <View style={{ flex: 1, flexDirection: 'row', backgroundColor: t.bg }}>
+        <LinearGradient colors={t.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1.15, justifyContent: 'center', paddingHorizontal: 72, paddingVertical: space.xxl }}>
+          <View style={{ maxWidth: 520, gap: space.xxl }}>
+            <View style={{ gap: space.md }}>
+              <Logo size={84} cut={t.hero[1]} />
+              <Txt variant="display" color="#FFFFFF" style={{ fontSize: 44, lineHeight: 52 }}>TaskBot</Txt>
+              <Txt variant="body" color={SOFT} style={{ fontSize: 19, lineHeight: 28 }}>Everything your boss asks for, kept in one place.</Txt>
+            </View>
+            <View style={{ gap: space.md }}>
+              {FEATURES.map((f) => (
+                <View key={f.title} style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', backgroundColor: GLASS, borderRadius: radius.lg, padding: space.lg }}>
+                  <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: GLASS, alignItems: 'center', justifyContent: 'center' }}>
+                    <Ionicons name={f.icon} size={21} color="#FFFFFF" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Txt variant="body" color="#FFFFFF" strong>{f.title}</Txt>
+                    <Txt variant="label" color={SOFT}>{f.text}</Txt>
+                  </View>
+                </View>
+              ))}
+            </View>
+          </View>
+        </LinearGradient>
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', padding: space.xxl }}>
+          <View style={[{ width: '100%', maxWidth: 440, gap: space.lg, backgroundColor: t.surface, borderRadius: radius.xl, borderWidth: 1, borderColor: t.border, padding: 36 }, elevation(t, 2)]}>
+            <View style={{ gap: 6 }}>
+              <Txt variant="title" style={{ fontSize: 26, lineHeight: 32 }}>Sign in</Txt>
+              <Txt variant="body" sub>Use the Telegram account that is in the group with your boss. No password is needed.</Txt>
+            </View>
+            {message ? (
+              <View style={{ flexDirection: 'row', gap: space.sm, backgroundColor: t.dangerSoft, borderRadius: radius.md, padding: space.md }}>
+                <Ionicons name="alert-circle" size={18} color={t.danger} />
+                <Txt variant="label" color={t.danger} style={{ flex: 1 }}>{message}</Txt>
+              </View>
+            ) : null}
+            {!isConfigured ? (
+              <View style={{ backgroundColor: t.dangerSoft, borderRadius: radius.md, padding: space.md }}>
+                <Txt variant="label" color={t.danger}>The app is not configured: the Supabase URL and anon key are missing from this build.</Txt>
+              </View>
+            ) : pending ? (
+              <>
+                <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center', backgroundColor: t.primarySoft, borderRadius: radius.lg, padding: space.lg }}>
+                  <ActivityIndicator color={t.primary} />
+                  <Txt variant="label" color={t.primary} style={{ flex: 1 }}>Press Start in the bot's chat in Telegram (it opened in a new tab). This page signs in on its own once you do.</Txt>
+                </View>
+                <Btn icon="paper-plane" label="Open Telegram again" onPress={() => Linking.openURL(pending.url)} />
+                <Btn kind="ghost" label="Cancel" onPress={() => setPending(null)} />
+              </>
+            ) : (
+              <>
+                <Btn icon="paper-plane" label={busy ? 'Opening Telegram…' : 'Continue with Telegram'} onPress={begin} disabled={busy} />
+                <Txt variant="caption" sub style={{ textAlign: 'center' }}>You confirm once inside Telegram, then come back to this tab.</Txt>
+              </>
+            )}
+          </View>
+        </View>
+      </View>
+    );
+  }
 
   return (
     <LinearGradient colors={t.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1, paddingTop: insets.top + space.xxl, paddingBottom: insets.bottom + space.xl, paddingHorizontal: space.xl + 4 }}>

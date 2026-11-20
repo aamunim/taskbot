@@ -7,7 +7,9 @@ import { FileListRow, LinkRow, VoiceCard } from '@/components/library';
 import { Appear } from '@/components/motion';
 import { Card, Empty, ErrorBanner, RoleFilterBar, SectionHeader, Skeleton, TopBar, Txt, styles } from '@/components/ui';
 import * as api from '@/lib/api';
+import { Page, Panel, Quiet } from '@/components/desktop';
 import { useData } from '@/lib/data';
+import { useLayout } from '@/lib/layout';
 import { PRIORITY_RANK, STATUS_LABEL, fileGroup, fileTitle, fmtDateTime, plural } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
 import { matchesRole } from '@/lib/roles';
@@ -25,6 +27,7 @@ export default function Project() {
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
   const [who, setWho] = usePref<RoleFilter>('role:project', 'all');
+  const { desktop } = useLayout();
 
   const mine = useMemo(() => items.filter((i) => !i.needs_review && i.tags.includes(tag ?? '') && matchesRole(role(i.source_sender_tg_id), who)), [items, tag, role, who]);
   const ids = useMemo(() => new Set(items.filter((i) => i.tags.includes(tag ?? '')).map((i) => i.id)), [items, tag]);
@@ -65,6 +68,63 @@ export default function Project() {
       Math.max(0, photos.findIndex((p) => p.id === f.id)),
     );
   const empty = !mine.length && !myFiles.length && !myLinks.length;
+
+  if (desktop) {
+    // Three columns: the work, what to remember, and what was shared.
+    const summary = [open.length ? `${open.length} open` : null, done.length ? `${done.length} done` : null, notes.length ? plural(notes.length, 'note') : null, myFiles.length ? plural(myFiles.length, 'file') : null, myLinks.length ? plural(myLinks.length, 'link') : null].filter(Boolean).join(' · ');
+    const col = { flex: 1, minWidth: 0, gap: space.lg } as const;
+    const list = { gap: space.md } as const;
+    return (
+      <View style={{ flex: 1 }}>
+        <TopBar title={`#${tag ?? ''}`}>
+          <RoleFilterBar value={who} onChange={setWho} />
+        </TopBar>
+        <Page contentStyle={{ gap: space.lg }}>
+          <ErrorBanner text={error} />
+          {loading ? <Skeleton /> : null}
+          {!loading && empty ? <Empty icon="folder-open-outline" title="Nothing here" text={who === 'all' ? 'No tasks or notes carry this tag any more.' : 'Nothing in this project matches the filter.'} /> : null}
+          {!empty ? <Txt variant="label" sub>{summary}</Txt> : null}
+          {!empty ? (
+            <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.lg }}>
+              <View style={col}>
+                <Panel title="Open tasks" count={open.length}>
+                  {open.length ? <View style={list}>{open.map((i) => <TaskCard key={i.id} item={i} onStatus={change(i)} />)}</View> : <Quiet>No open tasks.</Quiet>}
+                </Panel>
+                {done.length ? <Panel title="Completed" count={done.length}><View style={list}>{done.map((i) => <TaskCard key={i.id} item={i} onStatus={change(i)} />)}</View></Panel> : null}
+              </View>
+              <View style={col}>
+                <Panel title="Notes" count={notes.length}>
+                  {notes.length ? <View style={{ gap: space.sm }}>{notes.map((i) => <NoteCard key={i.id} item={i} compact />)}</View> : <Quiet>No notes in this project.</Quiet>}
+                </Panel>
+                {voices.length ? <Panel title="Voice" count={voices.length}><View style={list}>{voices.map((f) => <VoiceCard key={f.id} file={f} onStar={() => star('files', f.id, !f.starred)} />)}</View></Panel> : null}
+              </View>
+              <View style={col}>
+                <Panel title="Files" count={others.length}>
+                  {others.length ? (
+                    <View style={{ gap: space.sm }}>
+                      {others.map((f) => {
+                        const thumb = f.storage_path ? thumbs[f.storage_path] : undefined;
+                        return <FileListRow key={f.id} file={f} thumb={fileGroup(f) === 'photo' ? thumb : undefined} onStar={() => star('files', f.id, !f.starred)} onOpen={fileGroup(f) === 'photo' && thumb ? () => openPhoto(f) : undefined} />;
+                      })}
+                    </View>
+                  ) : (
+                    <Quiet>No files.</Quiet>
+                  )}
+                </Panel>
+                {myLinks.length ? (
+                  <Panel title="Links" count={myLinks.length}>
+                    <Card style={{ padding: 0, overflow: 'hidden' }}>
+                      {myLinks.map((l, i) => <LinkRow key={l.id} link={l} onStar={() => star('links', l.id, !l.starred)} last={i === myLinks.length - 1} />)}
+                    </Card>
+                  </Panel>
+                ) : null}
+              </View>
+            </View>
+          ) : null}
+        </Page>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>

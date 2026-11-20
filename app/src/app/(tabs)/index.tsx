@@ -8,8 +8,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { NoteCard, StatusRing, TaskCard, openItem } from '@/components/items';
 import { Appear, reduceMotionNow } from '@/components/motion';
 import { WeekChart } from '@/components/WeekChart';
-import { Avatar, Card, Empty, ErrorBanner, IconBtn, RoleBadge, SectionHeader, Skeleton, Txt, styles, type IconName } from '@/components/ui';
+import { Avatar, Card, Empty, ErrorBanner, Header, IconBtn, RoleBadge, SectionHeader, Skeleton, Txt, styles, type IconName } from '@/components/ui';
+import { Page, Panel, Quiet } from '@/components/desktop';
 import { useData } from '@/lib/data';
+import { useLayout } from '@/lib/layout';
 import { PRIORITY_RANK, STATUS_LABEL, dayNumber, fmtLongDate, greeting, isOverdue, plural, todayNumber, waitingLabel } from '@/lib/format';
 import { success } from '@/lib/haptics';
 import { setPref } from '@/lib/prefs';
@@ -27,6 +29,7 @@ export default function Today() {
   const insets = useSafeAreaInsets();
   const { items, config, loading, error, refresh, updateItem, role } = useData();
   const [refreshing, setRefreshing] = useState(false);
+  const { desktop, pageWidth } = useLayout();
 
   // The header is dark in both themes, so the status bar icons must be light while this tab is showing.
   useFocusEffect(
@@ -81,6 +84,152 @@ export default function Today() {
   const nothing = !view.overdue.length && !view.today.length && !view.week.length && !view.notes.length && !view.undated;
   const progress = view.dueTotal ? view.dueDone / view.dueTotal : 0;
   const allDone = view.dueTotal > 0 && view.dueDone === view.dueTotal && !view.overdue.length;
+
+
+  const inboxBanner = view.inbox > 0 ? (
+    <Card onPress={() => router.push('/inbox')} style={[{ flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: t.bossSoft, borderColor: 'transparent', marginBottom: desktop ? 0 : space.md }, desktop && { flex: 1 }]} flat>
+                <Ionicons name="help-buoy" size={22} color={t.boss} />
+                <View style={{ flex: 1 }}>
+                  <Txt variant="body" strong color={t.boss}>{plural(view.inbox, 'item')} to review</Txt>
+                  <Txt variant="caption" color={t.boss}>The AI was not sure about {view.inbox === 1 ? 'it' : 'these'}</Txt>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color={t.boss} />
+              </Card>
+  ) : null;
+  const waitingCard = (
+                <Card style={{ padding: 0, overflow: 'hidden' }}>
+                  {view.waiting.map((i, k) => (
+                    <Pressable
+                      key={i.id}
+                      onPress={() => openItem(i.id)}
+                      accessibilityRole="button"
+                      style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, paddingHorizontal: space.lg, borderTopWidth: k ? 1 : 0, borderTopColor: t.border }, pressed && { backgroundColor: t.surfaceAlt }]}>
+                      <StatusRing status="waiting" size={24} />
+                      <View style={{ flex: 1, gap: 2 }}>
+                        <Txt content strong numberOfLines={2}>{i.title}</Txt>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+                          <RoleBadge role={role(i.source_sender_tg_id)} compact />
+                          <Txt variant="caption" sub>Sent · {waitingLabel(i.waiting_since)}</Txt>
+                        </View>
+                      </View>
+                      <Pressable
+                        onPress={() => { success(); setStatus(i)('done'); }}
+                        hitSlop={8}
+                        accessibilityRole="button"
+                        accessibilityLabel="Boss replied, mark as done"
+                        style={({ pressed }) => [{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: radius.pill, backgroundColor: t.successSoft }, pressed && styles.pressed]}>
+                        <Txt variant="caption" color={t.success} strong>Settled</Txt>
+                      </Pressable>
+                    </Pressable>
+                  ))}
+                </Card>
+  );
+  const weekCard = (
+            <Card style={{ gap: space.lg }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: view.streak ? t.bossSoft : t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}>
+                  <Ionicons name="flame" size={24} color={view.streak ? t.bossSolid : t.faint} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Txt variant="heading">{view.streak ? `${view.streak}-day on-time streak` : 'No streak yet'}</Txt>
+                  <Txt variant="caption" sub>Days in a row with everything due finished on time. Days with nothing due do not count.</Txt>
+                </View>
+              </View>
+              <View style={{ height: 1, backgroundColor: t.border }} />
+              <WeekChart days={view.stats} />
+            </Card>
+  );
+
+  if (desktop) {
+    // Dashboard across the window: a summary strip, then columns of panels.
+    const tasks = (list: Item[]) => list.map((i) => <TaskCard key={i.id} item={i} onStatus={setStatus(i)} />);
+    const first = (
+      <>
+        {view.overdue.length ? <Panel title="Overdue" count={view.overdue.length} color={t.danger}><List>{tasks(view.overdue)}</List></Panel> : null}
+        <Panel title="Today" count={view.today.length || undefined}>
+          {view.today.length ? <List>{tasks(view.today)}</List> : <Quiet>{view.dueTotal ? 'Everything due today is done.' : 'No deadlines today.'}</Quiet>}
+        </Panel>
+      </>
+    );
+    const second = (
+      <>
+        <Panel title="Next 7 days" count={view.week.length || undefined}>
+          {view.week.length ? <List>{tasks(view.week)}</List> : <Quiet>Nothing else is due this week.</Quiet>}
+          {view.undated > 0 ? (
+            <Pressable onPress={() => router.push('/tasks')} accessibilityRole="link" style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.md, paddingHorizontal: space.xs }}>
+              <Txt variant="label" color={t.primary}>{plural(view.undated, 'more open task')} without a deadline</Txt>
+              <Ionicons name="arrow-forward" size={14} color={t.primary} />
+            </Pressable>
+          ) : null}
+        </Panel>
+        {view.waiting.length ? <Panel title="Waiting on boss" count={view.waiting.length}>{waitingCard}</Panel> : null}
+      </>
+    );
+    const third = (
+      <>
+        <View style={{ flexDirection: 'row', gap: space.md }}>
+          <SplitCard role="boss" title="From boss" name={config?.boss_name ?? null} counts={view.boss} onPress={() => openTasks('boss')} />
+          <SplitCard role="me" title="My own" name={null} counts={view.me} onPress={() => openTasks('me')} />
+        </View>
+        <Panel title="This week">{weekCard}</Panel>
+        {view.notes.length ? <Panel title="Latest notes"><List>{view.notes.map((i) => <NoteCard key={i.id} item={i} compact />)}</List></Panel> : null}
+      </>
+    );
+    const col = { flex: 1, minWidth: 0, gap: space.lg } as const;
+    const three = pageWidth >= 1180;
+    return (
+      <View style={{ flex: 1 }}>
+        <Header title="Today" subtitle={fmtLongDate(new Date())} />
+        <Page contentStyle={{ gap: space.lg }}>
+          <ErrorBanner text={error} />
+          <LinearGradient colors={t.hero} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={{ borderRadius: radius.xl, paddingVertical: space.xl, paddingHorizontal: space.xxl, flexDirection: 'row', alignItems: 'center', gap: space.xxl }}>
+            <View style={{ flex: 1, minWidth: 0, gap: space.md }}>
+              <Txt variant="display" color="#FFFFFF">{greeting()}</Txt>
+              <View style={{ gap: space.sm, maxWidth: 520 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 6 }}>
+                  {view.dueTotal ? (
+                    <>
+                      <Txt variant="title" color="#FFFFFF">{view.dueDone} of {view.dueTotal}</Txt>
+                      <Txt variant="label" color="rgba(255,255,255,0.85)">due today done</Txt>
+                    </>
+                  ) : (
+                    <Txt variant="label" color="rgba(255,255,255,0.85)">Nothing is due today</Txt>
+                  )}
+                </View>
+                <View style={{ height: 8, borderRadius: 4, backgroundColor: 'rgba(255,255,255,0.22)' }}>
+                  <View style={{ height: 8, borderRadius: 4, backgroundColor: '#FFFFFF', width: `${Math.round(progress * 100)}%` }} />
+                </View>
+              </View>
+            </View>
+            <View style={{ flexDirection: 'row', gap: space.sm, width: three ? 480 : 390 }}>
+              <Stat value={view.overdue.length} label="Overdue" alert={view.overdue.length > 0} />
+              <Stat value={view.today.length} label="Left today" />
+              <Stat value={view.week.length} label="Next 7 days" />
+            </View>
+          </LinearGradient>
+
+          {loading ? (
+            <Skeleton />
+          ) : (
+            <>
+              {inboxBanner || allDone ? (
+                <View style={{ flexDirection: 'row', gap: space.lg }}>
+                  {inboxBanner}
+                  {allDone ? <View style={{ flex: 1 }}><Celebration count={view.dueTotal} /></View> : null}
+                </View>
+              ) : null}
+              {nothing ? <Empty icon="chatbubbles-outline" title="Nothing here yet" text="When your boss writes in the group, tasks and notes show up here on their own." /> : null}
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.lg }}>
+                <View style={col}>{first}{three ? null : second}</View>
+                {three ? <View style={col}>{second}</View> : null}
+                <View style={col}>{third}</View>
+              </View>
+            </>
+          )}
+        </Page>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -140,16 +289,7 @@ export default function Today() {
           <Skeleton />
         ) : (
           <>
-            {view.inbox > 0 ? (
-              <Card onPress={() => router.push('/inbox')} style={{ flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: t.bossSoft, borderColor: 'transparent', marginBottom: space.md }} flat>
-                <Ionicons name="help-buoy" size={22} color={t.boss} />
-                <View style={{ flex: 1 }}>
-                  <Txt variant="body" strong color={t.boss}>{plural(view.inbox, 'item')} to review</Txt>
-                  <Txt variant="caption" color={t.boss}>The AI was not sure about {view.inbox === 1 ? 'it' : 'these'}</Txt>
-                </View>
-                <Ionicons name="chevron-forward" size={18} color={t.boss} />
-              </Card>
-            ) : null}
+            {inboxBanner}
 
             {allDone ? <Celebration count={view.dueTotal} /> : null}
 
@@ -177,32 +317,7 @@ export default function Today() {
             {view.waiting.length ? (
               <>
                 <SectionHeader title="Waiting on boss" count={view.waiting.length} />
-                <Card style={{ padding: 0, overflow: 'hidden' }}>
-                  {view.waiting.map((i, k) => (
-                    <Pressable
-                      key={i.id}
-                      onPress={() => openItem(i.id)}
-                      accessibilityRole="button"
-                      style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: space.md, paddingHorizontal: space.lg, borderTopWidth: k ? 1 : 0, borderTopColor: t.border }, pressed && { backgroundColor: t.surfaceAlt }]}>
-                      <StatusRing status="waiting" size={24} />
-                      <View style={{ flex: 1, gap: 2 }}>
-                        <Txt content strong numberOfLines={2}>{i.title}</Txt>
-                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-                          <RoleBadge role={role(i.source_sender_tg_id)} compact />
-                          <Txt variant="caption" sub>Sent · {waitingLabel(i.waiting_since)}</Txt>
-                        </View>
-                      </View>
-                      <Pressable
-                        onPress={() => { success(); setStatus(i)('done'); }}
-                        hitSlop={8}
-                        accessibilityRole="button"
-                        accessibilityLabel="Boss replied, mark as done"
-                        style={({ pressed }) => [{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: radius.pill, backgroundColor: t.successSoft }, pressed && styles.pressed]}>
-                        <Txt variant="caption" color={t.success} strong>Settled</Txt>
-                      </Pressable>
-                    </Pressable>
-                  ))}
-                </Card>
+                {waitingCard}
               </>
             ) : null}
 
@@ -217,19 +332,7 @@ export default function Today() {
             ) : null}
 
             <SectionHeader title="This week" />
-            <Card style={{ gap: space.lg }}>
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-                <View style={{ width: 48, height: 48, borderRadius: 24, backgroundColor: view.streak ? t.bossSoft : t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}>
-                  <Ionicons name="flame" size={24} color={view.streak ? t.bossSolid : t.faint} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Txt variant="heading">{view.streak ? `${view.streak}-day on-time streak` : 'No streak yet'}</Txt>
-                  <Txt variant="caption" sub>Days in a row with everything due finished on time. Days with nothing due do not count.</Txt>
-                </View>
-              </View>
-              <View style={{ height: 1, backgroundColor: t.border }} />
-              <WeekChart days={view.stats} />
-            </Card>
+            {weekCard}
 
             {view.notes.length ? <SectionHeader title="Latest notes" /> : null}
             <List>{view.notes.map((i) => <NoteCard key={i.id} item={i} compact />)}</List>

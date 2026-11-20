@@ -5,7 +5,9 @@ import { openItem } from '@/components/items';
 import { Appear } from '@/components/motion';
 import { Avatar, Empty, ErrorBanner, RoleFilterBar, Skeleton, TopBar, Txt, styles } from '@/components/ui';
 import * as api from '@/lib/api';
+import { Page } from '@/components/desktop';
 import { useData } from '@/lib/data';
+import { useLayout } from '@/lib/layout';
 import { dayNumber, fileGroup, fmtDayLong, fmtTime, plural, todayNumber } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
 import { matchesRole, roleColors } from '@/lib/roles';
@@ -28,6 +30,7 @@ export default function Timeline() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [who, setWho] = usePref<RoleFilter>('role:timeline', 'all');
+  const { desktop } = useLayout();
 
   const load = useCallback(async () => {
     const res = await api.fetchTimeline();
@@ -49,35 +52,7 @@ export default function Timeline() {
     return [...out.entries()];
   }, [messages, role, who]);
 
-  return (
-    <View style={{ flex: 1 }}>
-      <TopBar title="Timeline">
-        <RoleFilterBar value={who} onChange={setWho} />
-      </TopBar>
-      <ScrollView
-        contentContainerStyle={[styles.list, { paddingBottom: 48 }]}
-        refreshControl={
-          <RefreshControl
-            tintColor={t.primary}
-            refreshing={refreshing}
-            onRefresh={async () => {
-              setRefreshing(true);
-              await load();
-              setRefreshing(false);
-            }}
-          />
-        }>
-        <ErrorBanner text={error} />
-        {loading ? <Skeleton /> : null}
-        {!loading && !days.length ? <Empty icon="time-outline" title="Nothing said yet" text="Every message from the group is kept here in order, with the tasks and notes made from it." /> : null}
-        {days.map(([day, list], di) => (
-          <Appear key={day} index={di}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: di ? space.xl : space.sm, marginBottom: space.md }}>
-              <Txt variant="overline" sub>{dayTitle(day)}</Txt>
-              <View style={{ flex: 1, height: 1, backgroundColor: t.border }} />
-              <Txt variant="caption" color={t.faint}>{plural(list.length, 'message')}</Txt>
-            </View>
-            {list.map((m, i) => {
+  const renderMessage = (m: TimelineMessage, i: number, list: TimelineMessage[]) => {
               const r = role(m.sender_tg_id);
               const c = roleColors(t, r);
               const body = m.text ?? m.transcript;
@@ -136,7 +111,63 @@ export default function Timeline() {
                   </View>
                 </View>
               );
-            })}
+  };
+
+  if (desktop) {
+    // Each day is a row: its date stays in a left column while that day's messages run down the right.
+    return (
+      <View style={{ flex: 1 }}>
+        <TopBar title="Timeline" noBack>
+          <RoleFilterBar value={who} onChange={setWho} />
+        </TopBar>
+        <Page>
+          <ErrorBanner text={error} />
+          {loading ? <Skeleton /> : null}
+          {!loading && !days.length ? <Empty icon="time-outline" title="Nothing said yet" text="Every message from the group is kept here in order, with the tasks and notes made from it." /> : null}
+          {days.map(([day, list], di) => (
+            <View key={day} style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.xxl, paddingVertical: space.xl, borderTopWidth: di ? 1 : 0, borderTopColor: t.border }}>
+              <View style={[{ width: 210 }, { position: 'sticky', top: space.md } as object]}>
+                <Txt variant="heading">{dayTitle(day).split(' · ')[0]}</Txt>
+                {dayTitle(day).includes(' · ') ? <Txt variant="label" sub>{dayTitle(day).split(' · ')[1]}</Txt> : null}
+                <Txt variant="caption" color={t.faint} style={{ marginTop: 4 }}>{plural(list.length, 'message')}</Txt>
+              </View>
+              <View style={{ flex: 1, minWidth: 0, maxWidth: 860 }}>{list.map((m, i) => renderMessage(m, i, list))}</View>
+            </View>
+          ))}
+        </Page>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Timeline">
+        <RoleFilterBar value={who} onChange={setWho} />
+      </TopBar>
+      <ScrollView
+        contentContainerStyle={[styles.list, { paddingBottom: 48 }]}
+        refreshControl={
+          <RefreshControl
+            tintColor={t.primary}
+            refreshing={refreshing}
+            onRefresh={async () => {
+              setRefreshing(true);
+              await load();
+              setRefreshing(false);
+            }}
+          />
+        }>
+        <ErrorBanner text={error} />
+        {loading ? <Skeleton /> : null}
+        {!loading && !days.length ? <Empty icon="time-outline" title="Nothing said yet" text="Every message from the group is kept here in order, with the tasks and notes made from it." /> : null}
+        {days.map(([day, list], di) => (
+          <Appear key={day} index={di}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, marginTop: di ? space.xl : space.sm, marginBottom: space.md }}>
+              <Txt variant="overline" sub>{dayTitle(day)}</Txt>
+              <View style={{ flex: 1, height: 1, backgroundColor: t.border }} />
+              <Txt variant="caption" color={t.faint}>{plural(list.length, 'message')}</Txt>
+            </View>
+            {list.map((m, i) => renderMessage(m, i, list))}
           </Appear>
         ))}
       </ScrollView>

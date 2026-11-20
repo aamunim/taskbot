@@ -264,6 +264,52 @@ export function LinkRow({ link, onStar, showHost = true, last }: LinkProps & { s
   );
 }
 
+/** Desktop: links as a table (what, site, who, when) with one row per link. Click a row to open it. */
+export function LinkTable({ links, onStar }: { links: LibLink[]; onStar: (link: LibLink) => void }) {
+  const t = useTheme();
+  const { role } = useData();
+  const cell = { site: { width: 190 }, from: { width: 170 }, date: { width: 110 } } as const;
+  return (
+    <Card style={{ padding: 0, overflow: 'hidden' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.lg, paddingVertical: space.sm, paddingHorizontal: space.lg, backgroundColor: t.surfaceAlt }}>
+        <Txt variant="overline" sub style={{ flex: 1 }}>Link</Txt>
+        <Txt variant="overline" sub style={cell.site}>Site</Txt>
+        <Txt variant="overline" sub style={cell.from}>From</Txt>
+        <Txt variant="overline" sub style={cell.date}>Shared</Txt>
+        <View style={{ width: 64 }} />
+      </View>
+      {links.map((link) => {
+        const { host } = splitUrl(link.url, link.domain);
+        const said = linkSaid(link);
+        const label = linkLabel(link);
+        return (
+          <Pressable
+            key={link.id}
+            onPress={() => Linking.openURL(link.url)}
+            accessibilityRole="link"
+            accessibilityLabel={`Open ${label}`}
+            style={(s) => [{ flexDirection: 'row', alignItems: 'center', gap: space.lg, paddingVertical: 10, paddingHorizontal: space.lg, borderTopWidth: 1, borderTopColor: t.border }, (s as { hovered?: boolean }).hovered && { backgroundColor: t.surfaceAlt }]}>
+            <View style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+              <SiteIcon link={link} size={34} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <Txt variant="body" content strong numberOfLines={1}>{label}</Txt>
+                {said && said !== label ? <Txt variant="caption" content sub numberOfLines={1}>{said}</Txt> : null}
+              </View>
+            </View>
+            <Txt variant="label" sub numberOfLines={1} style={cell.site}>{host}</Txt>
+            <View style={cell.from}><RoleBadge role={role(link.sender_tg_id)} name={link.sender_name} /></View>
+            <Txt variant="label" sub style={cell.date}>{fmtDate(link.sent_at)}</Txt>
+            <View style={{ width: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: space.md }}>
+              <StarButton starred={link.starred} onPress={() => onStar(link)} />
+              <Ionicons name="open-outline" size={18} color={t.primary} />
+            </View>
+          </Pressable>
+        );
+      })}
+    </Card>
+  );
+}
+
 export function LinkCard({ link, onStar }: LinkProps) {
   const t = useTheme();
   const { role } = useData();

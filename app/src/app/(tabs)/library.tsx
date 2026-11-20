@@ -4,12 +4,13 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, TextInput, View } from 'react-native';
 import { openGallery, type GalleryImage } from '@/components/Gallery';
 import { Appear } from '@/components/motion';
-import { DocTile, FileListRow, LinkCard, LinkRow, LinkTile, PhotoTile, VoiceCard, linkLabel } from '@/components/library';
-import { Card, Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionGroup, RoleFilterBar, SectionHeader, Sheet, Skeleton, styles, type IconName } from '@/components/ui';
+import { DocTile, FileListRow, LinkCard, LinkRow, LinkTable, LinkTile, PhotoTile, VoiceCard, linkLabel } from '@/components/library';
+import { Card, Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionGroup, RoleFilterBar, SectionHeader, Segments, Sheet, Skeleton, styles, type IconName } from '@/components/ui';
 import * as api from '@/lib/api';
 import { useData } from '@/lib/data';
 import { dayHeading, fileExt, fileGroup, fileTitle, fmtDateTime, splitUrl } from '@/lib/format';
-import { useAppWidth } from '@/lib/layout';
+import { Grid, Page } from '@/components/desktop';
+import { useAppWidth, useLayout } from '@/lib/layout';
 import { usePref } from '@/lib/prefs';
 import { ROLE_LABEL, matchesRole } from '@/lib/roles';
 import { content, noOutline, radius, space, useTheme } from '@/lib/theme';
@@ -39,6 +40,7 @@ const EMPTY: Record<Section, { icon: IconName; title: string }> = {
 export default function Library() {
   const t = useTheme();
   const width = useAppWidth();
+  const { desktop } = useLayout();
   const { role, version } = useData();
   const [files, setFiles] = useState<LibFile[]>([]);
   const [links, setLinks] = useState<LibLink[]>([]);
@@ -145,8 +147,9 @@ export default function Library() {
   }, [section, visibleFiles, visibleLinks, sort, grouping, starFirst, role]);
 
   const contentWidth = width - space.lg * 2;
-  const photoSize = Math.floor((contentWidth - space.sm * 2) / 3);
-  const tileWidth = Math.floor((contentWidth - space.md) / 2);
+  // Desktop tiles keep a comfortable fixed size and simply wrap; a phone fits three photos or two tiles per row.
+  const photoSize = desktop ? 184 : Math.floor((contentWidth - space.sm * 2) / 3);
+  const tileWidth = desktop ? 244 : Math.floor((contentWidth - space.md) / 2);
   const grid = isLinks ? linkView === 'grid' : mode === 'grid' && section !== 'voice';
   const compactLinks = isLinks && linkView === 'compact';
 
@@ -170,6 +173,69 @@ export default function Library() {
     if (!grid) return <FileListRow key={e.key} file={f} thumb={section === 'photo' ? thumb : undefined} onStar={onStar} onOpen={onOpen} />;
     return section === 'photo' ? <PhotoTile key={e.key} file={f} thumb={thumb} onStar={onStar} onOpen={onOpen} size={photoSize} /> : <DocTile key={e.key} file={f} onStar={onStar} width={tileWidth} />;
   };
+
+  const arrange = (
+      <Sheet visible={options} onClose={() => setOptions(false)} title={isLinks ? 'Arrange links' : 'Arrange library'}>
+        {isLinks ? (
+          <OptionGroup label="View" value={linkView} onChange={setLinkView} options={[{ value: 'compact', label: 'List', icon: 'reorder-four-outline' }, { value: 'card', label: 'Cards', icon: 'list-outline' }, { value: 'grid', label: 'Grid', icon: 'grid-outline' }]} />
+        ) : (
+          <OptionGroup label="View" value={mode} onChange={setMode} options={[{ value: 'grid', label: 'Grid', icon: 'grid-outline' }, { value: 'list', label: 'List', icon: 'list-outline' }]} />
+        )}
+        <OptionGroup label="Sort" value={sort} onChange={setSort} options={[{ value: 'new', label: 'Newest' }, { value: 'old', label: 'Oldest' }, { value: 'name', label: 'Name' }]} />
+        {isLinks ? (
+          <OptionGroup label="Group by" value={linkGroup} onChange={setLinkGroup} options={[{ value: 'type', label: 'Site' }, { value: 'date', label: 'Date' }, { value: 'sender', label: 'Sender' }, { value: 'none', label: 'None' }]} />
+        ) : (
+          <OptionGroup label="Group by" value={groupBy} onChange={setGroupBy} options={[{ value: 'none', label: 'None' }, { value: 'date', label: 'Date' }, { value: 'sender', label: 'Sender' }, { value: 'type', label: 'Type' }]} />
+        )}
+        <OptionGroup label="Starred" value={starFirst} onChange={setStarFirst} options={[{ value: 'on', label: 'Starred first', icon: 'star' }, { value: 'off', label: 'Mixed in' }]} />
+      </Sheet>
+  );
+
+  if (desktop) {
+    const body = (list: Entry[], title: string) => {
+      if (compactLinks) return <LinkTable links={list.flatMap((e) => (e.link ? [e.link] : []))} onStar={(l) => star('links', l.id, !l.starred)} />;
+      if (grid) return <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: section === 'photo' ? space.sm : space.md }}>{list.map(renderEntry)}</View>;
+      return <Grid min={section === 'voice' ? 440 : 400} gap={space.md} key={title}>{list.map(renderEntry)}</Grid>;
+    };
+    return (
+      <View style={{ flex: 1 }}>
+        <Header title="Library" actions={<IconBtn icon="options-outline" label={isLinks ? 'Arrange links' : 'Arrange library'} size={36} onPress={() => setOptions(true)} bg={t.surface} />}>
+          <RoleFilterBar value={who} onChange={setWho} />
+          <Segments value={section} onChange={setSection} options={SECTIONS.map((s) => ({ value: s.value, label: s.label, count: counts[s.value] }))} />
+        </Header>
+        <Page>
+          {isLinks && links.length ? (
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, width: 380, maxWidth: '100%', backgroundColor: t.surface, borderColor: t.border, borderWidth: 1, borderRadius: radius.md, paddingHorizontal: space.md, marginBottom: groups.length && !groups[0][0] ? space.lg : 0 }}>
+              <Ionicons name="search" size={17} color={t.faint} />
+              <TextInput value={linkQuery} onChangeText={setLinkQuery} placeholder="Find a link" placeholderTextColor={t.faint} autoCapitalize="none" autoCorrect={false} accessibilityLabel="Find a link" style={[{ flex: 1, minWidth: 0, color: t.text, fontFamily: content.regular, fontSize: 15 * t.scale, paddingVertical: 8 }, noOutline]} />
+              {linkQuery ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setLinkQuery('')} accessibilityLabel="Clear" /> : null}
+            </View>
+          ) : null}
+          <ErrorBanner text={error} />
+          {loading ? <Skeleton /> : null}
+          {!loading && !groups.length ? (
+            isLinks && linkQuery.trim() ? <Empty icon="search-outline" title="No matching links" text="Try a site name or a word from the message." /> : <Empty icon={EMPTY[section].icon} title={EMPTY[section].title} text="Files and links shared in the group are collected here automatically." />
+          ) : null}
+          {groups.map(([title, list]) => {
+            const closed = isLinks && !!title && !!collapsed[title];
+            return (
+              <View key={`${section}:${title || 'all'}`}>
+                {title && isLinks ? (
+                  <Pressable onPress={() => setCollapsed((c) => ({ ...c, [title]: !c[title] }))} accessibilityRole="button" accessibilityState={{ expanded: !closed }} accessibilityLabel={`${title}, ${list.length} links`}>
+                    <SectionHeader title={title} count={list.length} action={<Ionicons name={closed ? 'chevron-forward' : 'chevron-down'} size={16} color={t.faint} />} />
+                  </Pressable>
+                ) : title ? (
+                  <SectionHeader title={title} count={list.length} />
+                ) : null}
+                {closed ? null : body(list, title)}
+              </View>
+            );
+          })}
+        </Page>
+        {arrange}
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>
@@ -260,20 +326,7 @@ export default function Library() {
         </View>
       </ScrollView>
 
-      <Sheet visible={options} onClose={() => setOptions(false)} title={isLinks ? 'Arrange links' : 'Arrange library'}>
-        {isLinks ? (
-          <OptionGroup label="View" value={linkView} onChange={setLinkView} options={[{ value: 'compact', label: 'List', icon: 'reorder-four-outline' }, { value: 'card', label: 'Cards', icon: 'list-outline' }, { value: 'grid', label: 'Grid', icon: 'grid-outline' }]} />
-        ) : (
-          <OptionGroup label="View" value={mode} onChange={setMode} options={[{ value: 'grid', label: 'Grid', icon: 'grid-outline' }, { value: 'list', label: 'List', icon: 'list-outline' }]} />
-        )}
-        <OptionGroup label="Sort" value={sort} onChange={setSort} options={[{ value: 'new', label: 'Newest' }, { value: 'old', label: 'Oldest' }, { value: 'name', label: 'Name' }]} />
-        {isLinks ? (
-          <OptionGroup label="Group by" value={linkGroup} onChange={setLinkGroup} options={[{ value: 'type', label: 'Site' }, { value: 'date', label: 'Date' }, { value: 'sender', label: 'Sender' }, { value: 'none', label: 'None' }]} />
-        ) : (
-          <OptionGroup label="Group by" value={groupBy} onChange={setGroupBy} options={[{ value: 'none', label: 'None' }, { value: 'date', label: 'Date' }, { value: 'sender', label: 'Sender' }, { value: 'type', label: 'Type' }]} />
-        )}
-        <OptionGroup label="Starred" value={starFirst} onChange={setStarFirst} options={[{ value: 'on', label: 'Starred first', icon: 'star' }, { value: 'off', label: 'Mixed in' }]} />
-      </Sheet>
+      {arrange}
     </View>
   );
 }

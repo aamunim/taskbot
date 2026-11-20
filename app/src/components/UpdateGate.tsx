@@ -64,7 +64,8 @@ export function UpdateGate() {
               A new version of TaskBot has been downloaded. Restart to start using it. It only takes a moment and nothing is lost.
             </Txt>
           </View>
-          <View style={{ gap: space.md }}>
+          {/* On a wide window the button keeps a button's width instead of spanning the screen. */}
+          <View style={{ gap: space.md, width: '100%', maxWidth: 440, alignSelf: 'center' }}>
             <Pressable
               onPress={restartToUpdate}
               accessibilityRole="button"

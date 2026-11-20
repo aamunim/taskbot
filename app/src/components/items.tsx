@@ -3,15 +3,21 @@ import { router } from 'expo-router';
 import { useEffect, useRef } from 'react';
 import { Animated, Easing, Pressable, View } from 'react-native';
 import { useData } from '@/lib/data';
-import { PRIORITY_LABEL, STATUS_LABEL, dueLabel, fmtDate, isOverdue, waitingLabel } from '@/lib/format';
+import { PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_SHORT, dueLabel, fmtDate, isOverdue, waitingLabel } from '@/lib/format';
 import { bump, success, tap } from '@/lib/haptics';
+import { isDesktopNow } from '@/lib/layout';
+import { setPaneItem, usePaneItem } from '@/lib/pane';
 import { roleColors } from '@/lib/roles';
 import { radius, space, useTheme } from '@/lib/theme';
 import type { Item, Priority, Status } from '@/lib/types';
 import { reduceMotionNow } from './motion';
 import { Card, Pill, RoleBadge, Txt, styles, type IconName } from './ui';
 
-export const openItem = (id: string) => router.push({ pathname: '/item/[id]', params: { id } });
+/** Opens a task or note: in the side pane on a desktop window, as its own screen on a phone. */
+export const openItem = (id: string) => {
+  if (isDesktopNow()) setPaneItem(id);
+  else router.push({ pathname: '/item/[id]', params: { id } });
+};
 
 export function DuePill({ item }: { item: Pick<Item, 'due_at' | 'due_all_day' | 'status'> }) {
   const t = useTheme();
@@ -123,8 +129,12 @@ const QUICK: Partial<Record<Status, Quick>> = {
 };
 
 /** A task row. `onStatus` enables the quick status controls. */
-export function TaskCard({ item, onStatus }: { item: Item; onStatus?: (to: Status) => void }) {
+export function TaskCard({ item, onStatus, board, onOpen, selected }: { item: Item; onStatus?: (to: Status) => void; /** Board column card: shows move-left / move-right controls. */ board?: boolean; onOpen?: () => void; selected?: boolean }) {
   const t = useTheme();
+  const open = usePaneItem() === item.id;
+  const at = STATUSES.indexOf(item.status);
+  const prev = board && at > 0 ? STATUSES[at - 1] : null;
+  const after = board && at < STATUSES.length - 1 ? STATUSES[at + 1] : null;
   const { role } = useData();
   const done = item.status === 'done';
   const next = QUICK[item.status];
@@ -133,7 +143,7 @@ export function TaskCard({ item, onStatus }: { item: Item; onStatus?: (to: Statu
     onStatus?.(to);
   };
   return (
-    <Card onPress={() => openItem(item.id)} style={{ overflow: 'hidden', paddingLeft: space.lg + 2 }}>
+    <Card onPress={onOpen ?? (() => openItem(item.id))} selected={selected ?? open} style={{ overflow: 'hidden', paddingLeft: space.lg + 2 }}>
       <RoleBar item={item} />
       <View style={{ flexDirection: 'row', gap: space.md }}>
         <View style={{ paddingTop: 1 }}>
@@ -154,7 +164,12 @@ export function TaskCard({ item, onStatus }: { item: Item; onStatus?: (to: Statu
               <RoleBadge role={role(item.source_sender_tg_id)} name={item.source_sender_name} />
             </View>
             {item.has_files ? <Ionicons name="attach" size={17} color={t.faint} accessibilityLabel="Has attachments" /> : null}
-            {onStatus && next ? (
+            {onStatus && board ? (
+              <View style={{ flexDirection: 'row', gap: 4 }}>
+                {prev ? <MoveBtn icon="arrow-back" label={`Move to ${STATUS_SHORT[prev]}`} onPress={() => change(prev)} /> : null}
+                {after ? <MoveBtn icon="arrow-forward" label={`Move to ${STATUS_SHORT[after]}`} onPress={() => change(after)} /> : null}
+              </View>
+            ) : onStatus && next ? (
               <Pressable
                 onPress={() => change(next.to)}
                 hitSlop={8}
@@ -169,6 +184,21 @@ export function TaskCard({ item, onStatus }: { item: Item; onStatus?: (to: Statu
         </View>
       </View>
     </Card>
+  );
+}
+
+function MoveBtn({ icon, label, onPress }: { icon: IconName; label: string; onPress: () => void }) {
+  const t = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      hitSlop={4}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      {...({ title: label } as object)}
+      style={(s) => [{ width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center', backgroundColor: (s as { hovered?: boolean }).hovered ? t.primaryBg : t.primarySoft }, s.pressed && styles.pressed]}>
+      {(s) => <Ionicons name={icon} size={14} color={(s as { hovered?: boolean }).hovered ? t.onPrimary : t.primary} />}
+    </Pressable>
   );
 }
 
@@ -209,9 +239,10 @@ export function NoteCard({ item, compact, onPin }: { item: Item; compact?: boole
   const t = useTheme();
   const { role } = useData();
   const r = role(item.source_sender_tg_id);
+  const open = usePaneItem() === item.id;
   if (compact) {
     return (
-      <Card onPress={() => openItem(item.id)} style={{ overflow: 'hidden', paddingVertical: space.md, paddingLeft: space.lg + 2 }}>
+      <Card onPress={() => openItem(item.id)} selected={open} style={{ overflow: 'hidden', paddingVertical: space.md, paddingLeft: space.lg + 2 }}>
         <RoleBar item={item} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
           <View style={{ flex: 1, gap: 2 }}>
@@ -228,7 +259,7 @@ export function NoteCard({ item, compact, onPin }: { item: Item; compact?: boole
     );
   }
   return (
-    <Card onPress={() => openItem(item.id)} style={{ gap: space.sm, padding: space.md + 2, borderTopWidth: 3, borderTopColor: roleColors(t, r).solid }}>
+    <Card onPress={() => openItem(item.id)} selected={open} style={{ gap: space.sm, padding: space.md + 2, borderTopWidth: 3, borderTopColor: roleColors(t, r).solid }}>
       <View style={{ flexDirection: 'row', alignItems: 'center' }}>
         <View style={{ flex: 1 }}><RoleBadge role={r} compact /></View>
         {onPin ? <PinButton pinned={item.pinned} onPress={onPin} /> : null}
@@ -244,13 +275,13 @@ export function NoteCard({ item, compact, onPin }: { item: Item; compact?: boole
   );
 }
 
-/** Splits children into two columns, always adding to the shorter one. */
-export function noteColumns(notes: Item[]): [Item[], Item[]] {
-  const cols: [Item[], Item[]] = [[], []];
-  const height = [0, 0];
+/** Splits notes into `count` columns, always adding to the shortest one. */
+export function noteColumns(notes: Item[], count = 2): Item[][] {
+  const cols: Item[][] = Array.from({ length: count }, () => []);
+  const height = cols.map(() => 0);
   for (const n of notes) {
     const weight = 90 + Math.min(n.title.length, 110) * 0.9 + Math.min(n.details?.length ?? 0, 120) * 0.5 + (n.tags.length ? 28 : 0);
-    const col = height[0] <= height[1] ? 0 : 1;
+    const col = height.indexOf(Math.min(...height));
     cols[col].push(n);
     height[col] += weight;
   }

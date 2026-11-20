@@ -15,7 +15,8 @@ import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GalleryHost } from '@/components/Gallery';
 import { Intro } from '@/components/Intro';
-import { MAX_APP_WIDTH } from '@/lib/layout';
+import { DesktopStyles, DetailPane, Sidebar } from '@/components/desktop';
+import { MAX_APP_WIDTH, useLayout } from '@/lib/layout';
 import { UpdateGate } from '@/components/UpdateGate';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { DataProvider } from '@/lib/data';
@@ -34,11 +35,15 @@ function Routes({ ready }: { ready: boolean }) {
     SplashScreen.hideAsync().catch(() => {});
   }, []);
   const finish = useCallback(() => setIntro(false), []);
+  const { desktop } = useLayout();
+  // Desktop: sidebar, page, detail pane across the whole window. Otherwise one phone-width column.
+  const shell = desktop && signedIn;
 
   if (!ready || loading) return null;
   return (
-    <View style={{ flex: 1, backgroundColor: t.surfaceAlt, alignItems: 'center' }}>
-    <View style={{ flex: 1, width: '100%', maxWidth: MAX_APP_WIDTH, backgroundColor: t.bg, overflow: 'hidden' }}>
+    <View style={[{ flex: 1, backgroundColor: t.surfaceAlt }, desktop ? { flexDirection: 'row' } : { alignItems: 'center' }]}>
+    {shell ? <Sidebar /> : null}
+    <View style={[{ flex: 1, backgroundColor: t.bg, overflow: 'hidden' }, desktop ? { minWidth: 0 } : { width: '100%', maxWidth: MAX_APP_WIDTH }]}>
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg }, animation: 'slide_from_right', animationDuration: 220 }}>
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="(tabs)" />
@@ -56,6 +61,8 @@ function Routes({ ready }: { ready: boolean }) {
       </Stack>
       <GalleryHost />
     </View>
+      {shell ? <DetailPane /> : null}
+      {desktop ? <DesktopStyles /> : null}
       <UpdateGate />
       {intro ? <Intro onReady={hideNative} onDone={finish} /> : null}
     </View>

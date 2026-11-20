@@ -4,7 +4,9 @@ import { ScrollView, View } from 'react-native';
 import { openProject } from '@/components/items';
 import { Appear } from '@/components/motion';
 import { Card, Empty, Skeleton, TopBar, Txt, styles } from '@/components/ui';
+import { Grid, Page } from '@/components/desktop';
 import { useData } from '@/lib/data';
+import { useLayout } from '@/lib/layout';
 import { fmtDate, plural } from '@/lib/format';
 import { projects } from '@/lib/stats';
 import { space, useTheme } from '@/lib/theme';
@@ -14,20 +16,13 @@ export default function Projects() {
   const t = useTheme();
   const { items, loading } = useData();
   const list = useMemo(() => projects(items), [items]);
+  const { desktop } = useLayout();
 
-  return (
-    <View style={{ flex: 1 }}>
-      <TopBar title="Projects" />
-      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: 48, gap: space.md }]}>
-        <Txt variant="label" sub style={{ paddingHorizontal: 2 }}>Tasks, notes, files and links grouped by the topic tags the AI gives them.</Txt>
-        {loading ? <Skeleton /> : null}
-        {!loading && !list.length ? <Empty icon="folder-open-outline" title="No projects yet" text="Projects appear once tasks and notes have topic tags." /> : null}
-        {list.map((p, i) => {
+  const projectCard = (p: (typeof list)[number]) => {
           const tasks = p.total - p.notes;
           const done = tasks - p.open;
-          return (
-            <Appear key={p.tag} index={i}>
-              <Card onPress={() => openProject(p.tag)} style={{ gap: space.md }}>
+    return (
+      <Card onPress={() => openProject(p.tag)} style={{ gap: space.md }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
                   <View style={{ width: 44, height: 44, borderRadius: 14, backgroundColor: t.primarySoft, alignItems: 'center', justifyContent: 'center' }}>
                     <Ionicons name="folder-open" size={21} color={t.primary} />
@@ -49,9 +44,31 @@ export default function Projects() {
                   </View>
                 ) : null}
               </Card>
-            </Appear>
-          );
-        })}
+    );
+  };
+
+  if (desktop) {
+    return (
+      <View style={{ flex: 1 }}>
+        <TopBar title="Projects" noBack />
+        <Page contentStyle={{ gap: space.lg }}>
+          <Txt variant="label" sub>Tasks, notes, files and links grouped by the topic tags the AI gives them.</Txt>
+          {loading ? <Skeleton /> : null}
+          {!loading && !list.length ? <Empty icon="folder-open-outline" title="No projects yet" text="Projects appear once tasks and notes have topic tags." /> : null}
+          <Grid min={340} gap={space.lg}>{list.map((p) => <View key={p.tag}>{projectCard(p)}</View>)}</Grid>
+        </Page>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Projects" />
+      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: 48, gap: space.md }]}>
+        <Txt variant="label" sub style={{ paddingHorizontal: 2 }}>Tasks, notes, files and links grouped by the topic tags the AI gives them.</Txt>
+        {loading ? <Skeleton /> : null}
+        {!loading && !list.length ? <Empty icon="folder-open-outline" title="No projects yet" text="Projects appear once tasks and notes have topic tags." /> : null}
+        {list.map((p, i) => <Appear key={p.tag} index={i}>{projectCard(p)}</Appear>)}
       </ScrollView>
     </View>
   );

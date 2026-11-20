@@ -3,8 +3,10 @@ import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { NoteCard, noteColumns } from '@/components/items';
 import { Appear } from '@/components/motion';
-import { Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionGroup, RoleFilterBar, SectionHeader, Sheet, Skeleton, styles } from '@/components/ui';
+import { Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionGroup, RoleFilterBar, SectionHeader, Segments, Sheet, Skeleton, styles } from '@/components/ui';
+import { Grid, Page } from '@/components/desktop';
 import { useData } from '@/lib/data';
+import { useLayout } from '@/lib/layout';
 import { dayHeading } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
 import { matchesRole } from '@/lib/roles';
@@ -23,6 +25,7 @@ export default function Notes() {
   const [tag, setTag] = useState<string | null>(null);
   const [options, setOptions] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const { desktop, pageWidth } = useLayout();
 
   const notes = useMemo(
     () => items.filter((i) => i.type === 'note' && !i.needs_review && matchesRole(role(i.source_sender_tg_id), who)),
@@ -52,6 +55,56 @@ export default function Notes() {
 
   const togglePin = (n: Item) => updateItem(n.id, { pinned: !n.pinned }, n.pinned ? 'Unpinned' : 'Pinned');
   const isEmpty = !groups.length;
+
+  if (desktop) {
+    // A wall of notes across the window: as many columns as fit.
+    const columns = Math.max(2, Math.min(5, Math.floor((pageWidth - 56) / 290)));
+    return (
+      <View style={{ flex: 1 }}>
+        <Header
+          title="Notes"
+          actions={
+            <View style={{ flexDirection: 'row', gap: space.sm }}>
+              <IconBtn icon="options-outline" label="Arrange notes" size={36} onPress={() => setOptions(true)} bg={t.surface} />
+            </View>
+          }>
+          <RoleFilterBar value={who} onChange={setWho} />
+          <Segments value={mode} onChange={setMode} options={[{ value: 'cards', label: 'Cards' }, { value: 'compact', label: 'Compact' }]} />
+        </Header>
+        <Page>
+          {tags.length ? (
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              <Chip label="All" active={!activeTag} onPress={() => setTag(null)} />
+              {tags.map(([g, n]) => <Chip key={g} content label={`#${g}`} count={n} active={activeTag === g} onPress={() => setTag(activeTag === g ? null : g)} />)}
+            </View>
+          ) : null}
+          <ErrorBanner text={error} />
+          {loading ? <View style={{ marginTop: space.lg }}><Skeleton /></View> : null}
+          {!loading && isEmpty ? <Empty icon="reader-outline" title="No notes yet" text="Decisions, standing instructions and facts from the chat are kept here." /> : null}
+          {groups.map(([title, list]) => (
+            <View key={title}>
+              <SectionHeader title={title} count={list.length} />
+              {mode === 'compact' ? (
+                <Grid min={340} gap={space.sm}>{list.map((n) => <NoteCard key={n.id} item={n} compact onPin={() => togglePin(n)} />)}</Grid>
+              ) : (
+                <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
+                  {noteColumns(list, columns).map((col, i) => (
+                    <View key={i} style={{ flex: 1, minWidth: 0, gap: space.md }}>
+                      {col.map((n) => <NoteCard key={n.id} item={n} onPin={() => togglePin(n)} />)}
+                    </View>
+                  ))}
+                </View>
+              )}
+            </View>
+          ))}
+        </Page>
+        <Sheet visible={options} onClose={() => setOptions(false)} title="Arrange notes">
+          <OptionGroup label="View" value={mode} onChange={setMode} options={[{ value: 'cards', label: 'Cards', icon: 'grid-outline' }, { value: 'compact', label: 'Compact', icon: 'list-outline' }]} />
+          <OptionGroup label="Group by" value={groupBy} onChange={setGroupBy} options={[{ value: 'none', label: 'Pinned first' }, { value: 'tag', label: 'Tag' }, { value: 'date', label: 'Date' }]} />
+        </Sheet>
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>

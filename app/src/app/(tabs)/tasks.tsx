@@ -4,7 +4,9 @@ import { MonthCalendar } from '@/components/Calendar';
 import { TaskCard } from '@/components/items';
 import { Appear } from '@/components/motion';
 import { Empty, ErrorBanner, GlobalActions, Header, IconBtn, RoleFilterBar, SectionHeader, Segments, Skeleton, Txt, styles } from '@/components/ui';
+import { Grid, Page, Panel, Quiet, TASKS_DESK_PREF, type TasksDeskView } from '@/components/desktop';
 import { useData } from '@/lib/data';
+import { useLayout } from '@/lib/layout';
 import { PRIORITY_RANK, STATUSES, STATUS_LABEL, STATUS_SHORT, dayNumber, dayParts, fmtDayLong, isOverdue, todayNumber } from '@/lib/format';
 import { tap } from '@/lib/haptics';
 import { usePref } from '@/lib/prefs';
@@ -35,6 +37,8 @@ export default function Tasks() {
   const [who, setWho] = usePref<RoleFilter>('role:tasks', 'all');
   const [view, setView] = usePref<'list' | 'calendar'>('tasks:view', 'list');
   const [refreshing, setRefreshing] = useState(false);
+  const { desktop, pageWidth } = useLayout();
+  const [desk, setDesk] = usePref<TasksDeskView>(TASKS_DESK_PREF, 'board');
   const [selected, setSelected] = useState(todayNumber);
   const [month, setMonth] = useState(() => {
     const p = dayParts(todayNumber());
@@ -70,6 +74,62 @@ export default function Tasks() {
       }}
     />
   );
+
+  if (desktop) {
+    // Board: one column per status, each scrolling on its own. List and calendar are alternatives.
+    const column = (st: Status) => {
+      const rows = tasks.filter((i) => i.status === st);
+      if (st === 'done') return rows.sort((a, b) => (b.completed_at ?? '').localeCompare(a.completed_at ?? ''));
+      if (st === 'waiting') return rows.sort((a, b) => (a.waiting_since ?? '').localeCompare(b.waiting_since ?? ''));
+      return rows.sort((a, b) => Number(isOverdue(b)) - Number(isOverdue(a)) || byDue(a, b));
+    };
+    // Four columns share the page; on a narrow window they keep a readable width and the board scrolls sideways.
+    const columnWidth = Math.max(264, Math.min(460, Math.floor((pageWidth - space.xxl * 2 - space.lg * 3) / 4)));
+    return (
+      <View style={{ flex: 1 }}>
+        <Header title={desk === 'calendar' ? 'Calendar' : 'Tasks'}>
+          <RoleFilterBar value={who} onChange={setWho} />
+          <Segments value={desk} onChange={setDesk} options={[{ value: 'board', label: 'Board' }, { value: 'list', label: 'List' }, { value: 'calendar', label: 'Calendar' }]} />
+          {desk === 'list' ? <Segments value={status} onChange={setStatus} options={STATUSES.map((s) => ({ value: s, label: STATUS_SHORT[s], count: counts[s] }))} /> : null}
+        </Header>
+        {error ? <View style={{ paddingHorizontal: space.xxl }}><ErrorBanner text={error} /></View> : null}
+        {desk === 'board' ? (
+          <ScrollView horizontal style={{ flex: 1 }} contentContainerStyle={{ paddingHorizontal: space.xxl, paddingBottom: space.xl, paddingTop: space.xs, gap: space.lg }}>
+            {STATUSES.map((st) => {
+              const rows = column(st);
+              return (
+                <Panel key={st} scroll title={STATUS_LABEL[st]} count={rows.length} style={{ width: columnWidth }}>
+                  {loading ? <Skeleton rows={2} /> : null}
+                  {!loading && !rows.length ? <Quiet>{EMPTY_TITLE[st]}</Quiet> : null}
+                  {rows.map((i) => <TaskCard key={i.id} item={i} board onStatus={change(i)} />)}
+                </Panel>
+              );
+            })}
+          </ScrollView>
+        ) : desk === 'calendar' ? (
+          <View style={{ flex: 1, flexDirection: 'row', gap: space.xl, paddingHorizontal: space.xxl, paddingBottom: space.xl }}>
+            <ScrollView style={{ width: Math.min(460, pageWidth * 0.45), flexGrow: 0 }} showsVerticalScrollIndicator={false}>
+              <MonthCalendar tasks={tasks} month={month} onMonth={setMonth} selected={selected} onSelect={setSelected} />
+            </ScrollView>
+            <Panel scroll title={fmtDayLong(selected)} count={onDay.length || undefined} style={{ flex: 1 }}>
+              {onDay.length ? onDay.map((i) => <TaskCard key={i.id} item={i} onStatus={change(i)} />) : <Quiet>No deadlines on this day.</Quiet>}
+            </Panel>
+          </View>
+        ) : (
+          <Page>
+            {loading ? <Skeleton /> : null}
+            {!loading && !sections.length ? <Empty icon="checkmark-done-outline" title={EMPTY_TITLE[status]} text="Tasks appear here as soon as they are picked up from the group." /> : null}
+            {sections.map((sec) => (
+              <View key={sec.title}>
+                <SectionHeader title={sec.title} count={sec.data.length} color={sec.title === 'Overdue' ? t.danger : undefined} />
+                <Grid min={360}>{sec.data.map((i) => <TaskCard key={i.id} item={i} onStatus={change(i)} />)}</Grid>
+              </View>
+            ))}
+          </Page>
+        )}
+      </View>
+    );
+  }
 
   return (
     <View style={{ flex: 1 }}>

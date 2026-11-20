@@ -7,7 +7,9 @@ import { useCallback, useState, type ReactNode } from 'react';
 import { Pressable, ScrollView, View } from 'react-native';
 import { Avatar, Btn, Card, Chip, ErrorBanner, SectionHeader, Sheet, Skeleton, Toggle, TopBar, Txt, styles } from '@/components/ui';
 import * as api from '@/lib/api';
+import { Page } from '@/components/desktop';
 import { useData } from '@/lib/data';
+import { useLayout } from '@/lib/layout';
 import { DEMO } from '@/lib/demo';
 import { fmtDateTime, plural } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
@@ -37,6 +39,7 @@ export default function SettingsScreen() {
   const [senders, setSenders] = useState<Sender[]>([]);
   const [picking, setPicking] = useState(false);
   const { signOut } = useAuth();
+  const { desktop } = useLayout();
   const [accent, setAccent] = usePref<Accent>(PREF_ACCENT, 'indigo');
   const [appearance, setAppearance] = usePref<Appearance>(PREF_APPEARANCE, 'system');
   const [textSize, setTextSize] = usePref<TextSize>(PREF_TEXT_SIZE, 'default');
@@ -88,19 +91,7 @@ export default function SettingsScreen() {
     await saveConfig({ boss_tg_id: s?.tg_id ?? null, boss_name: s?.name ?? null });
   };
 
-  return (
-    <View style={{ flex: 1 }}>
-      <TopBar title="Settings" />
-      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: 48 }]}>
-        <ErrorBanner text={error} />
-        {DEMO ? (
-          <Card flat style={{ backgroundColor: t.primarySoft, borderColor: 'transparent', flexDirection: 'row', gap: space.sm }}>
-            <Ionicons name="flask" size={18} color={t.primary} />
-            <Txt variant="label" color={t.primary} style={{ flex: 1 }}>Demo build with sample data. Nothing here is saved.</Txt>
-          </Card>
-        ) : null}
-
-        <SectionHeader title="People" />
+  const people = (
         <Card style={{ gap: space.lg }}>
           <Pressable onPress={() => setPicking(true)} accessibilityRole="button" style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.md }, pressed && styles.pressed]}>
             <Avatar role="boss" name={cfg.boss_name ?? 'B'} size={44} />
@@ -124,8 +115,8 @@ export default function SettingsScreen() {
             </View>
           </View>
         </Card>
-
-        <SectionHeader title="Appearance" />
+  );
+  const appearanceCard = (
         <Card style={{ gap: space.lg }}>
           <View style={{ gap: space.sm }}>
             <Txt variant="body" strong>Colour</Txt>
@@ -148,8 +139,8 @@ export default function SettingsScreen() {
             <Txt variant="caption" sub>Boss and Me keep their amber and teal in every colour.</Txt>
           </View>
         </Card>
-
-        <SectionHeader title="Reminders" />
+  );
+  const reminders = (
         <Card style={{ gap: space.lg }}>
           <Txt variant="caption" sub>Reminders arrive as private Telegram messages from the bot.</Txt>
           <Row label="Morning summary" hint="Today's tasks, once a day">
@@ -171,8 +162,8 @@ export default function SettingsScreen() {
           </View>
           <Txt variant="caption" sub>Time zone: {cfg.timezone}</Txt>
         </Card>
-
-        <SectionHeader title="Bot status" />
+  );
+  const botStatus = (
         <Card style={{ gap: space.md }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
             <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: errorIsCurrent ? t.dangerSolid : t.success }} />
@@ -189,8 +180,8 @@ export default function SettingsScreen() {
             </View>
           ) : null}
         </Card>
-
-        <SectionHeader title="App" />
+  );
+  const appInfo = (
         <Card style={{ gap: space.md }}>
           <Fact label="Version" value={`${Constants.expoConfig?.version ?? '–'} · ${running.update}`} />
           {running.channel ? <Fact label="Update channel" value={running.channel} /> : null}
@@ -218,10 +209,9 @@ export default function SettingsScreen() {
             )}
           </View>
         </Card>
+  );
 
-        <Btn kind="danger" icon="log-out-outline" label="Sign out" onPress={logout} style={{ marginTop: space.xxl }} />
-      </ScrollView>
-
+  const bossPicker = (
       <Sheet visible={picking} onClose={() => setPicking(false)} title="Who is your boss?">
         <Txt variant="label" sub>Pick the person whose messages count as coming from your boss. Telegram does not share phone numbers with bots, so choose by name.</Txt>
         <View style={{ gap: space.sm, marginTop: space.lg }}>
@@ -233,6 +223,71 @@ export default function SettingsScreen() {
           <Choice selected={cfg.boss_tg_id == null} onPress={() => chooseBoss(null)} title="Everyone except me" subtitle="Treat all other senders as the boss" avatar={<View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="people" size={20} color={t.sub} /></View>} />
         </View>
       </Sheet>
+  );
+
+  if (desktop) {
+    const col = { flex: 1, minWidth: 0, maxWidth: 620 } as const;
+    return (
+      <View style={{ flex: 1 }}>
+        <TopBar title="Settings" noBack />
+        <Page>
+          <ErrorBanner text={error} />
+          {DEMO ? (
+            <Card flat style={{ backgroundColor: t.primarySoft, borderColor: 'transparent', flexDirection: 'row', gap: space.sm, maxWidth: 1260 }}>
+              <Ionicons name="flask" size={18} color={t.primary} />
+              <Txt variant="label" color={t.primary} style={{ flex: 1 }}>Demo build with sample data. Nothing here is saved.</Txt>
+            </Card>
+          ) : null}
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.xxl }}>
+            <View style={col}>
+              <SectionHeader title="People" />
+              {people}
+              <SectionHeader title="Reminders" />
+              {reminders}
+            </View>
+            <View style={col}>
+              <SectionHeader title="Appearance" />
+              {appearanceCard}
+              <SectionHeader title="Bot status" />
+              {botStatus}
+              <SectionHeader title="App" />
+              {appInfo}
+              <Btn kind="danger" icon="log-out-outline" label="Sign out" onPress={logout} style={{ marginTop: space.xxl, alignSelf: 'flex-start', minWidth: 200 }} />
+            </View>
+          </View>
+        </Page>
+        {bossPicker}
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      <TopBar title="Settings" />
+      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: 48 }]}>
+        <ErrorBanner text={error} />
+        {DEMO ? (
+          <Card flat style={{ backgroundColor: t.primarySoft, borderColor: 'transparent', flexDirection: 'row', gap: space.sm }}>
+            <Ionicons name="flask" size={18} color={t.primary} />
+            <Txt variant="label" color={t.primary} style={{ flex: 1 }}>Demo build with sample data. Nothing here is saved.</Txt>
+          </Card>
+        ) : null}
+
+        <SectionHeader title="People" />
+        {people}
+        <SectionHeader title="Appearance" />
+        {appearanceCard}
+        <SectionHeader title="Reminders" />
+        {reminders}
+        <SectionHeader title="Bot status" />
+        {botStatus}
+        <SectionHeader title="App" />
+        {appInfo}
+
+        <Btn kind="danger" icon="log-out-outline" label="Sign out" onPress={logout} style={{ marginTop: space.xxl }} />
+      </ScrollView>
+
+      {bossPicker}
     </View>
   );
 }
