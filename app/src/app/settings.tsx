@@ -229,6 +229,7 @@ export default function SettingsScreen() {
             <Choice key={s.tg_id} selected={cfg.boss_tg_id === s.tg_id} onPress={() => chooseBoss(s)} title={s.name ?? `User ${s.tg_id}`} subtitle={`${plural(s.message_count, 'message')} · last ${fmtDateTime(s.last_seen)}`} avatar={<Avatar role={cfg.boss_tg_id === s.tg_id ? 'boss' : 'other'} name={s.name} size={40} />} contentTitle />
           ))}
           {!others.length ? <Txt variant="label" sub>Nobody else has written in the group yet.</Txt> : null}
+          <Txt variant="caption" sub>Only people whose messages the bot has seen appear here. If your boss is missing, ask them to send any message in the group, or forward one of their messages into it, then open this list again.</Txt>
           <Choice selected={cfg.boss_tg_id == null} onPress={() => chooseBoss(null)} title="Everyone except me" subtitle="Treat all other senders as the boss" avatar={<View style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }}><Ionicons name="people" size={20} color={t.sub} /></View>} />
         </View>
       </Sheet>
