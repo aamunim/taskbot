@@ -22,7 +22,6 @@ Deno.serve(async (req) => {
   const info = await tg<{ url: string; pending_update_count: number; last_error_message?: string }>("getWebhookInfo");
 
   return json({
-    diagnostics: await diagnostics(),
     ok: true,
     bot: `@${me.username}`,
     // false means Privacy Mode is still on: the bot would miss ordinary group messages.
@@ -32,50 +31,3 @@ Deno.serve(async (req) => {
     last_webhook_error: info.last_error_message ?? null,
   });
 });
-
-/**
- * Counts only: no names, ids or message text, because this output lands in a
- * workflow log that may be public.
- */
-async function diagnostics(): Promise<Record<string, unknown>> {
-  const supabase = db();
-  const minutesAgo = (iso: string | null | undefined) =>
-    iso ? Math.round((Date.now() - new Date(iso).getTime()) / 60000) : null;
-  const { data: cfg } = await supabase.from("app_config").select("*").eq("id", 1).single();
-  const { data: chats } = await supabase.from("chats").select("id,type,approved");
-  const { data: msgs } = await supabase.from("messages")
-    .select("chat_id,sender_tg_id,process_status,kind,sent_at,created_at,forwarded_by_tg_id")
-    .order("created_at", { ascending: false }).limit(3000);
-  const rows = msgs ?? [];
-  const count = (key: (r: (typeof rows)[number]) => string) =>
-    rows.reduce<Record<string, number>>((acc, r) => ((acc[key(r)] = (acc[key(r)] ?? 0) + 1), acc), {});
-  const role = (id: number | null) =>
-    id === null ? "unknown" : id === cfg?.owner_tg_id ? "owner" : id === cfg?.boss_tg_id ? "boss" : id < 0 ? "chat" : "other";
-  return {
-    owner_set: !!cfg?.owner_tg_id,
-    boss_set: !!cfg?.boss_tg_id,
-    last_webhook_minutes_ago: minutesAgo(cfg?.last_webhook_at),
-    last_processed_minutes_ago: minutesAgo(cfg?.last_processed_at),
-    last_error_minutes_ago: minutesAgo(cfg?.last_error_at),
-    last_error_where: cfg?.last_error ? String(cfg.last_error).split(":")[0] : null,
-    chats: (chats ?? []).map((c, i) => {
-      const mine = rows.filter((r) => r.chat_id === c.id);
-      return {
-        chat: i + 1,
-        type: c.type,
-        approved: c.approved,
-        messages: mine.length,
-        distinct_senders: new Set(mine.map((r) => r.sender_tg_id)).size,
-        newest_message_minutes_ago: minutesAgo(mine[0]?.created_at),
-        by_sender_role: mine.reduce<Record<string, number>>((acc, r) => {
-          const k = role(r.sender_tg_id);
-          acc[k] = (acc[k] ?? 0) + 1;
-          return acc;
-        }, {}),
-      };
-    }),
-    messages_by_status: count((r) => r.process_status),
-    messages_by_kind: count((r) => r.kind),
-    forwarded_messages: rows.filter((r) => r.forwarded_by_tg_id !== null).length,
-  };
-}
