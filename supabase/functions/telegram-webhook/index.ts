@@ -1,6 +1,6 @@
 import { processChat } from "../_shared/pipeline.ts";
 import {
-  displayName, extractFiles, extractLinks, forwardOrigin, messageKind, sendMessage, type TgMessage, type TgUpdate,
+  displayName, extractFiles, extractLinks, forwardOrigin, messageKind, messageSender, sendMessage, type TgMessage, type TgUpdate,
 } from "../_shared/telegram.ts";
 import { db, json, optionalEnv, recordError, timingSafeEqual, webhookSecret } from "../_shared/util.ts";
 
@@ -109,8 +109,9 @@ async function saveGroupMessage(m: TgMessage, edited: boolean): Promise<number |
 
   // When the owner forwards a message the boss sent somewhere else, file it under
   // its original author so it is treated exactly like a message the boss wrote here.
-  let senderId: number | null = m.from?.id ?? null;
-  let senderName = displayName(m.from);
+  const author = messageSender(m);
+  let senderId: number | null = author.id;
+  let senderName = author.name;
   let forwardedBy: { id: number; name: string } | null = null;
   const origin = forwardOrigin(m);
   if (origin && m.from && owner !== null && m.from.id === owner && origin.id !== owner) {
@@ -126,7 +127,7 @@ async function saveGroupMessage(m: TgMessage, edited: boolean): Promise<number |
 
   const files = extractFiles(m);
   const kind = messageKind(m, files);
-  const analysable = kind !== "service" && !m.from?.is_bot;
+  const analysable = kind !== "service" && !author.isBot;
   const status = !analysable ? "skipped" : approved ? "pending" : "held";
 
   const { data: saved, error } = await supabase.from("messages").upsert({
@@ -167,9 +168,9 @@ async function saveGroupMessage(m: TgMessage, edited: boolean): Promise<number |
 
   // Until the owner chooses otherwise in the app, the first other person
   // seen in the owner's group is taken to be the boss.
-  if (approved && analysable && owner !== null && m.from && m.from.id !== owner) {
+  if (approved && analysable && owner !== null && !forwardedBy && author.id !== null && author.id !== owner) {
     await supabase.from("app_config")
-      .update({ boss_tg_id: m.from.id, boss_name: displayName(m.from) })
+      .update({ boss_tg_id: author.id, boss_name: author.name })
       .eq("id", 1).is("boss_tg_id", null);
   }
   // A forwarded message from a known account also tells us who the boss is, even if they never write here.

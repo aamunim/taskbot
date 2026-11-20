@@ -51,6 +51,9 @@ export interface TgMessage {
   edit_date?: number;
   chat: TgChat;
   from?: TgUser;
+  /** Set when someone posts as the group itself (anonymous admin) or as a channel. */
+  sender_chat?: TgChat;
+  author_signature?: string;
   text?: string;
   caption?: string;
   entities?: TgEntity[];
@@ -152,4 +155,18 @@ export function forwardOrigin(m: TgMessage): { id: number | null; name: string }
   if (o.type === "hidden_user" && o.sender_user_name) return { id: null, name: o.sender_user_name };
   const chat = o.sender_chat ?? o.chat;
   return chat ? { id: null, name: chat.title ?? "Channel" } : null;
+}
+
+/**
+ * Who a group message is from. An admin posting anonymously, or a post made as a
+ * channel, arrives from a placeholder bot account; the real sender is then the
+ * chat in `sender_chat`, which keeps a stable (negative) id of its own.
+ */
+export function messageSender(m: TgMessage): { id: number | null; name: string; isBot: boolean } {
+  if (m.sender_chat) {
+    const title = m.sender_chat.title ?? "Group";
+    const label = m.sender_chat.id === m.chat.id ? `${title} (anonymous admin)` : title;
+    return { id: m.sender_chat.id, name: m.author_signature ? `${m.author_signature} · ${label}` : label, isBot: false };
+  }
+  return { id: m.from?.id ?? null, name: displayName(m.from), isBot: !!m.from?.is_bot };
 }
