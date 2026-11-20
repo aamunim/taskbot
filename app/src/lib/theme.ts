@@ -1,4 +1,6 @@
+import { useMemo } from 'react';
 import { useColorScheme } from 'react-native';
+import { usePref } from './prefs';
 
 /** Latin UI face. */
 export const ui = {
@@ -18,18 +20,44 @@ export const content = {
 export const space = { xs: 4, sm: 8, md: 12, lg: 16, xl: 20, xxl: 28 } as const;
 export const radius = { sm: 10, md: 14, lg: 20, xl: 28, pill: 999 } as const;
 
-const light = {
+// ------------------------------------------------------------------ settings
+
+export type Accent = 'indigo' | 'ocean' | 'forest';
+export type Appearance = 'system' | 'light' | 'dark' | 'black';
+export type TextSize = 'small' | 'default' | 'large';
+
+export const PREF_ACCENT = 'theme:accent';
+export const PREF_APPEARANCE = 'theme:appearance';
+export const PREF_TEXT_SIZE = 'theme:textSize';
+export const THEME_PREF_KEYS = [PREF_ACCENT, PREF_APPEARANCE, PREF_TEXT_SIZE];
+
+export const ACCENTS: { value: Accent; label: string; swatch: string }[] = [
+  { value: 'indigo', label: 'Indigo', swatch: '#4338CA' },
+  { value: 'ocean', label: 'Ocean', swatch: '#1D4ED8' },
+  { value: 'forest', label: 'Forest', swatch: '#1E7A34' },
+];
+export const APPEARANCES: { value: Appearance; label: string }[] = [
+  { value: 'system', label: 'System' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+  { value: 'black', label: 'Black' },
+];
+export const TEXT_SIZES: { value: TextSize; label: string }[] = [
+  { value: 'small', label: 'Small' },
+  { value: 'default', label: 'Default' },
+  { value: 'large', label: 'Large' },
+];
+const SCALE: Record<TextSize, number> = { small: 0.92, default: 1, large: 1.14 };
+
+// ------------------------------------------------------------------ palettes
+
+/** Colours that do not depend on the accent. Role colours are the same in every theme. */
+const lightBase = {
   dark: false,
-  bg: '#F4F3FA',
-  surface: '#FFFFFF',
-  surfaceAlt: '#ECEAF6',
   text: '#16142B',
   sub: '#5C5977',
   faint: '#8B88A3',
-  border: '#E3E1EF',
-  primary: '#4338CA',
-  primaryBg: '#4338CA',
-  primarySoft: '#E8E6FB',
+  surface: '#FFFFFF',
   onPrimary: '#FFFFFF',
   boss: '#A64B05',
   bossSolid: '#F59E0B',
@@ -43,23 +71,14 @@ const light = {
   success: '#157A3E',
   successSoft: '#DFF5E6',
   star: '#E5A100',
-  shadow: '#2A2466',
-  hero: ['#2E2A86', '#4A3FDB', '#7B4BE8'] as [string, string, string],
   overlay: 'rgba(15, 12, 40, 0.45)',
 };
-
-const dark: typeof light = {
+const darkBase: typeof lightBase = {
   dark: true,
-  bg: '#0E0D1A',
-  surface: '#19172D',
-  surfaceAlt: '#24213F',
   text: '#F3F2FB',
   sub: '#ACA9C6',
   faint: '#807D9C',
-  border: '#2E2B4B',
-  primary: '#AFB8FF',
-  primaryBg: '#5548E6',
-  primarySoft: '#27244F',
+  surface: '#19172D',
   onPrimary: '#FFFFFF',
   boss: '#FBBF4A',
   bossSolid: '#F59E0B',
@@ -73,13 +92,57 @@ const dark: typeof light = {
   success: '#6EDC96',
   successSoft: '#12351F',
   star: '#F5C445',
-  shadow: '#000000',
-  hero: ['#1F1B5E', '#3B31B8', '#6B3FD0'] as [string, string, string],
   overlay: 'rgba(0, 0, 0, 0.6)',
 };
 
-export type Theme = typeof light;
-export const useTheme = (): Theme => (useColorScheme() === 'dark' ? dark : light);
+type Tint = {
+  bg: string;
+  surface: string;
+  surfaceAlt: string;
+  border: string;
+  primary: string;
+  primaryBg: string;
+  primarySoft: string;
+  shadow: string;
+  hero: [string, string, string];
+};
+
+const TINTS: Record<Accent, { light: Tint; dark: Tint }> = {
+  indigo: {
+    light: { bg: '#F4F3FA', surface: '#FFFFFF', surfaceAlt: '#ECEAF6', border: '#E3E1EF', primary: '#4338CA', primaryBg: '#4338CA', primarySoft: '#E8E6FB', shadow: '#2A2466', hero: ['#2E2A86', '#4A3FDB', '#7B4BE8'] },
+    dark: { bg: '#0E0D1A', surface: '#19172D', surfaceAlt: '#24213F', border: '#2E2B4B', primary: '#AFB8FF', primaryBg: '#5548E6', primarySoft: '#27244F', shadow: '#000000', hero: ['#1F1B5E', '#3B31B8', '#6B3FD0'] },
+  },
+  ocean: {
+    light: { bg: '#F1F5FB', surface: '#FFFFFF', surfaceAlt: '#E6EDF8', border: '#DCE4F1', primary: '#1D4ED8', primaryBg: '#1D4ED8', primarySoft: '#E0EAFF', shadow: '#16306B', hero: ['#1B3A8C', '#2563EB', '#3B9BF2'] },
+    dark: { bg: '#0A1020', surface: '#131B31', surfaceAlt: '#1D2742', border: '#273250', primary: '#9CC2FF', primaryBg: '#2F6BEB', primarySoft: '#17294F', shadow: '#000000', hero: ['#12255C', '#1D4ED8', '#2B86DE'] },
+  },
+  forest: {
+    light: { bg: '#F2F6F2', surface: '#FFFFFF', surfaceAlt: '#E6EFE7', border: '#DAE5DC', primary: '#1E7A34', primaryBg: '#1E7A34', primarySoft: '#E0F2E3', shadow: '#17402A', hero: ['#14532D', '#1E7A34', '#43A655'] },
+    dark: { bg: '#0B130E', surface: '#141F18', surfaceAlt: '#1E2D24', border: '#29392E', primary: '#8BE0A3', primaryBg: '#2A8F45', primarySoft: '#143220', shadow: '#000000', hero: ['#0E3B20', '#1E7A34', '#2F9A4A'] },
+  },
+};
+
+/** True black for OLED screens: the accent's dark colours on black surfaces. */
+const BLACK = { bg: '#000000', surface: '#0E0E13', surfaceAlt: '#1A1A22', border: '#26262F' };
+
+function build(accent: Accent, appearance: Exclude<Appearance, 'system'>, scale: number) {
+  const dark = appearance !== 'light';
+  const tint = TINTS[accent][dark ? 'dark' : 'light'];
+  return { ...(dark ? darkBase : lightBase), ...tint, ...(appearance === 'black' ? BLACK : {}), scale, accent, appearance };
+}
+
+export type Theme = ReturnType<typeof build>;
+
+export function useTheme(): Theme {
+  const system = useColorScheme() === 'dark' ? 'dark' : 'light';
+  const [accent] = usePref<Accent>(PREF_ACCENT, 'indigo');
+  const [appearance] = usePref<Appearance>(PREF_APPEARANCE, 'system');
+  const [size] = usePref<TextSize>(PREF_TEXT_SIZE, 'default');
+  return useMemo(
+    () => build(TINTS[accent] ? accent : 'indigo', appearance === 'system' ? system : appearance, SCALE[size] ?? 1),
+    [accent, appearance, size, system],
+  );
+}
 
 /** Soft card elevation; borders carry the edge in dark mode where shadows vanish. */
 export const elevation = (t: Theme, level: 1 | 2 = 1) =>

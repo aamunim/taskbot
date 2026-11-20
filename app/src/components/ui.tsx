@@ -49,9 +49,11 @@ export function Txt({ style, variant = 'body', content: isContent, sub, color, s
   const t = useTheme();
   const v = VARIANTS[variant];
   // Hind Siliguri sets smaller and needs more leading than the Latin face.
+  // The text-size setting scales every piece of text through this one component.
+  const k = t.scale;
   const base: TextStyle = isContent
-    ? { fontFamily: strong ? content.semibold : CONTENT_FONT[variant], fontSize: v.size + 1, lineHeight: Math.round((v.size + 1) * 1.5) }
-    : { fontFamily: strong ? ui.bold : v.font, fontSize: v.size, lineHeight: v.line };
+    ? { fontFamily: strong ? content.semibold : CONTENT_FONT[variant], fontSize: (v.size + 1) * k, lineHeight: Math.round((v.size + 1) * 1.5 * k) }
+    : { fontFamily: strong ? ui.bold : v.font, fontSize: v.size * k, lineHeight: Math.round(v.line * k) };
   const overline: TextStyle = variant === 'overline' ? { textTransform: 'uppercase', letterSpacing: 0.9 } : {};
   return <Text {...rest} style={[base, overline, { color: color ?? (sub ? t.sub : t.text) }, style]} />;
 }
@@ -88,7 +90,7 @@ export function Btn({ label, onPress, kind = 'primary', disabled, small, icon, s
 }) {
   const t = useTheme();
   const bg = { primary: t.primaryBg, soft: t.primarySoft, ghost: t.surfaceAlt, danger: t.dangerSoft, inverse: '#FFFFFF' }[kind];
-  const fg = { primary: t.onPrimary, soft: t.primary, ghost: t.text, danger: t.danger, inverse: '#2E2A86' }[kind];
+  const fg = { primary: t.onPrimary, soft: t.primary, ghost: t.text, danger: t.danger, inverse: t.hero[0] }[kind];
   return (
     <Pressable
       onPress={onPress}
@@ -96,7 +98,7 @@ export function Btn({ label, onPress, kind = 'primary', disabled, small, icon, s
       accessibilityRole="button"
       style={({ pressed }) => [styles.btn, small && styles.btnSmall, { backgroundColor: bg, opacity: disabled ? 0.45 : 1 }, pressed && styles.pressed, style]}>
       {icon ? <Ionicons name={icon} size={small ? 15 : 18} color={fg} /> : null}
-      <Text style={{ color: fg, fontFamily: ui.bold, fontSize: small ? 13 : 15, lineHeight: small ? 18 : 20 }}>{label}</Text>
+      <Text style={{ color: fg, fontFamily: ui.bold, fontSize: (small ? 13 : 15) * t.scale, lineHeight: Math.round((small ? 18 : 20) * t.scale) }}>{label}</Text>
     </Pressable>
   );
 }
@@ -122,13 +124,15 @@ export function IconBtn({ icon, onPress, label, color, bg, size = 40 }: {
   );
 }
 
-export function Chip({ label, active, onPress, icon, count, content: isContent }: {
+export function Chip({ label, active, onPress, icon, count, content: isContent, dot }: {
   label: string;
   active?: boolean;
   onPress?: () => void;
   icon?: IconName;
   count?: number;
   content?: boolean;
+  /** A colour sample shown before the label (theme choices). */
+  dot?: string;
 }) {
   const t = useTheme();
   const fg = active ? t.onPrimary : t.text;
@@ -139,6 +143,7 @@ export function Chip({ label, active, onPress, icon, count, content: isContent }
       accessibilityRole="button"
       accessibilityState={{ selected: !!active }}
       style={({ pressed }) => [styles.chip, { backgroundColor: active ? t.primaryBg : t.surface, borderColor: active ? t.primaryBg : t.border }, pressed && styles.pressed]}>
+      {dot ? <View style={{ width: 12, height: 12, borderRadius: 6, backgroundColor: dot, borderWidth: 1.5, borderColor: active ? t.onPrimary : 'transparent' }} /> : null}
       {icon ? <Ionicons name={icon} size={15} color={active ? t.onPrimary : t.sub} /> : null}
       <Txt variant="label" content={isContent} color={fg}>{label}</Txt>
       {count != null ? <Txt variant="caption" color={active ? t.onPrimary : t.faint}>{count}</Txt> : null}
@@ -174,7 +179,7 @@ export function Segments<T extends string>({ options, value, onChange }: {
             accessibilityState={{ selected: on }}
             style={[styles.segment, on && [{ backgroundColor: t.surface }, elevation(t)]]}>
             {o.dot ? <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: o.dot }} /> : null}
-            <Txt variant="label" color={on ? t.text : t.sub}>{o.label}</Txt>
+            <Txt variant="label" color={on ? t.text : t.sub} numberOfLines={1}>{o.label}</Txt>
             {o.count != null ? <Txt variant="caption" color={on ? t.primary : t.faint}>{o.count}</Txt> : null}
           </Pressable>
         );
@@ -372,7 +377,7 @@ export function Sheet({ visible, onClose, title, children }: { visible: boolean;
 /** One labelled row of mutually exclusive choices inside a sheet. */
 export function OptionGroup<T extends string>({ label, options, value, onChange }: {
   label: string;
-  options: { value: T; label: string; icon?: IconName }[];
+  options: { value: T; label: string; icon?: IconName; dot?: string }[];
   value: T;
   onChange: (v: T) => void;
 }) {
@@ -380,7 +385,7 @@ export function OptionGroup<T extends string>({ label, options, value, onChange 
     <View style={{ marginTop: space.lg }}>
       <Txt variant="overline" sub style={{ marginBottom: space.sm }}>{label}</Txt>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
-        {options.map((o) => <Chip key={o.value} label={o.label} icon={o.icon} active={o.value === value} onPress={() => onChange(o.value)} />)}
+        {options.map((o) => <Chip key={o.value} label={o.label} icon={o.icon} dot={o.dot} active={o.value === value} onPress={() => onChange(o.value)} />)}
       </View>
     </View>
   );
@@ -395,5 +400,5 @@ export const styles = StyleSheet.create({
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 7, paddingHorizontal: 12, borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth },
   pill: { flexDirection: 'row', alignItems: 'center', gap: 4, paddingVertical: 3, paddingHorizontal: 8, borderRadius: radius.pill, alignSelf: 'flex-start' },
   segments: { flexDirection: 'row', borderRadius: radius.md, padding: 4 },
-  segment: { flex: 1, flexDirection: 'row', gap: 6, alignItems: 'center', justifyContent: 'center', paddingVertical: 8, borderRadius: radius.sm },
+  segment: { flex: 1, flexDirection: 'row', gap: 5, alignItems: 'center', justifyContent: 'center', paddingVertical: 8, paddingHorizontal: 2, borderRadius: radius.sm },
 });

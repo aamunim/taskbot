@@ -6,14 +6,17 @@ import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react
 import { KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AudioPlayer } from '@/components/AudioPlayer';
-import { AttachmentRow } from '@/components/library';
-import { Avatar, Btn, Card, Chip, Empty, ErrorBanner, IconBtn, Pill, SectionHeader, Segments, Skeleton, Toggle, TopBar, Txt, styles } from '@/components/ui';
+import { Checklist } from '@/components/Checklist';
+import { TagPill, statusFeedback } from '@/components/items';
+import { AttachmentRow, LinkChip, openAttachment } from '@/components/library';
+import { Appear } from '@/components/motion';
+import { Avatar, Btn, Card, Chip, Empty, ErrorBanner, IconBtn, SectionHeader, Segments, Skeleton, Toggle, TopBar, Txt } from '@/components/ui';
 import * as api from '@/lib/api';
 import { useData } from '@/lib/data';
-import { PRIORITY_LABEL, STATUS_LABEL, fileGroup, fmtDate, fmtDateTime, fmtTime, fromPickerDate, splitUrl, telegramLink, toPickerDate } from '@/lib/format';
+import { PRIORITY_LABEL, STATUSES, STATUS_LABEL, STATUS_SHORT, fileGroup, fmtDate, fmtDateTime, fmtTime, fromPickerDate, telegramLink, toPickerDate, waitingLabel } from '@/lib/format';
 import { ROLE_LABEL, roleColors } from '@/lib/roles';
 import { content, elevation, noOutline, radius, space, useTheme } from '@/lib/theme';
-import type { Item, ItemEvent, ItemType, Message, Priority, Status } from '@/lib/types';
+import type { Item, ItemEvent, ItemType, Message, Priority } from '@/lib/types';
 
 type Draft = Pick<Item, 'title' | 'details' | 'type' | 'status' | 'priority' | 'due_at' | 'due_all_day' | 'user_note'>;
 const FIELD_LABEL: Record<keyof Draft, string> = {
@@ -26,7 +29,6 @@ const FIELD_LABEL: Record<keyof Draft, string> = {
   due_all_day: 'Deadline',
   user_note: 'My note',
 };
-const STATUSES: Status[] = ['todo', 'doing', 'done'];
 const PRIORITIES: Priority[] = ['low', 'normal', 'high', 'urgent'];
 
 const draftOf = (i: Item): Draft => ({
@@ -45,7 +47,7 @@ export default function ItemDetail() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const { id } = useLocalSearchParams<{ id: string }>();
-  const { items, updateItem, role } = useData();
+  const { items, config, updateItem, role } = useData();
   const fromList = items.find((i) => i.id === id);
   const [fetched, setFetched] = useState<Item | null>(null);
   const [missing, setMissing] = useState(false);
@@ -142,6 +144,7 @@ export default function ItemDetail() {
     const patch: Partial<Item> = {};
     for (const k of changed) Object.assign(patch, { [k]: k === 'title' ? draft.title.trim() : draft[k] });
     const labels = [...new Set(changed.map((k) => FIELD_LABEL[k]))];
+    if (patch.status) statusFeedback(patch.status);
     const ok = await updateItem(item.id, patch, `You changed: ${labels.join(', ')}`);
     setSaving(false);
     if (!ok) return setError('Could not save. Please try again.');
@@ -156,7 +159,7 @@ export default function ItemDetail() {
     else if (ok && fetched) setFetched({ ...fetched, dismissed });
   };
 
-  const input = { color: t.text, fontFamily: content.regular, fontSize: 16, lineHeight: 24, padding: 0, ...noOutline } as const;
+  const input = { color: t.text, fontFamily: content.regular, fontSize: 16 * t.scale, lineHeight: 24 * t.scale, padding: 0, ...noOutline } as const;
   const typeOptions: { value: ItemType; label: string }[] = [{ value: 'task', label: 'Task' }, { value: 'note', label: 'Note' }];
 
   return (
@@ -165,7 +168,8 @@ export default function ItemDetail() {
         title={draft.type === 'task' ? 'Task' : 'Note'}
         right={!item.dismissed ? <IconBtn icon="trash-outline" label="Dismiss this item" onPress={() => setDismissed(true)} bg={t.surface} color={t.danger} /> : undefined}
       />
-      <ScrollView contentContainerStyle={[styles.list, { paddingBottom: changed.length ? 140 : 48, gap: space.md }]} keyboardShouldPersistTaps="handled">
+      <ScrollView contentContainerStyle={{ paddingBottom: changed.length ? 140 : 48 }} keyboardShouldPersistTaps="handled">
+        <Appear style={{ paddingHorizontal: space.lg, paddingTop: space.sm, gap: space.md }} distance={18}>
         <ErrorBanner text={error} />
 
         {item.needs_review ? (
@@ -196,12 +200,12 @@ export default function ItemDetail() {
         </View>
 
         <Card style={{ gap: space.md, borderLeftWidth: 4, borderLeftColor: rc.solid }}>
-          <TextInput value={draft.title} onChangeText={(title) => set({ title })} multiline placeholder="Title" placeholderTextColor={t.faint} style={[input, { fontFamily: content.semibold, fontSize: 21, lineHeight: 31 }]} />
+          <TextInput value={draft.title} onChangeText={(title) => set({ title })} multiline placeholder="Title" placeholderTextColor={t.faint} style={[input, { fontFamily: content.semibold, fontSize: 21 * t.scale, lineHeight: 31 * t.scale }]} />
           <View style={{ height: 1, backgroundColor: t.border }} />
           <TextInput value={draft.details ?? ''} onChangeText={(details) => set({ details: details || null })} multiline placeholder="Add details" placeholderTextColor={t.faint} style={[input, { minHeight: 48, textAlignVertical: 'top' }]} />
           {item.tags.length ? (
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
-              {item.tags.map((g) => <Pill key={g} content label={`#${g}`} fg={t.primary} bg={t.primarySoft} />)}
+              {item.tags.map((g) => <TagPill key={g} tag={g} />)}
             </View>
           ) : null}
         </Card>
@@ -213,7 +217,15 @@ export default function ItemDetail() {
           {draft.type === 'task' ? (
             <>
               <Field label="Status">
-                <Segments options={STATUSES.map((s) => ({ value: s, label: STATUS_LABEL[s] }))} value={draft.status} onChange={(status) => set({ status })} />
+                <Segments options={STATUSES.map((s) => ({ value: s, label: STATUS_SHORT[s] }))} value={draft.status} onChange={(status) => set({ status })} />
+                {draft.status === 'waiting' ? (
+                  <View style={{ flexDirection: 'row', gap: 6, alignItems: 'flex-start' }}>
+                    <Ionicons name="hourglass-outline" size={14} color={t.faint} style={{ marginTop: 2 }} />
+                    <Txt variant="caption" sub style={{ flex: 1 }}>
+                      {STATUS_LABEL.waiting}: you have delivered this and need a reply.{item.status === 'waiting' ? ` Sent, ${waitingLabel(item.waiting_since)}.` : ''}
+                    </Txt>
+                  </View>
+                ) : null}
               </Field>
               <Field label="Priority">
                 <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
@@ -243,6 +255,8 @@ export default function ItemDetail() {
           ) : null}
         </Card>
 
+        {draft.type === 'task' ? <Checklist itemId={item.id} /> : null}
+
         <Card style={{ gap: space.sm }}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
             <Ionicons name="lock-closed" size={13} color={t.faint} />
@@ -266,32 +280,43 @@ export default function ItemDetail() {
                     <Txt variant="label" content color={mc.fg} strong style={{ flex: 1 }} numberOfLines={1}>{m.sender_name ?? 'Unknown'}</Txt>
                     <Txt variant="caption" color={mc.fg}>{fmtDateTime(m.sent_at)}{m.edited_at ? ' · edited' : ''}</Txt>
                   </View>
-                  {m.text ? <Txt content selectable>{m.text}</Txt> : null}
-                  {m.files.map((f) =>
-                    fileGroup(f) === 'voice' && f.status === 'stored' && f.storage_path ? (
-                      <View key={f.id} style={{ backgroundColor: t.surface, borderRadius: radius.md, padding: space.md }}>
-                        <AudioPlayer storagePath={f.storage_path} duration={f.duration_seconds} />
-                      </View>
-                    ) : (
-                      <AttachmentRow key={f.id} file={f} />
-                    ),
-                  )}
-                  {m.transcript ? (
-                    <View style={{ gap: 2 }}>
-                      <Txt variant="caption" color={mc.fg}>Transcribed from voice, may contain mistakes</Txt>
-                      <Txt content selectable>{m.transcript}</Txt>
+                  {m.forwarded_by_tg_id != null || m.forwarded_by_name ? (
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Ionicons name="arrow-redo" size={13} color={mc.fg} />
+                      <Txt variant="caption" color={mc.fg}>
+                        {m.forwarded_by_tg_id != null && m.forwarded_by_tg_id === config?.owner_tg_id ? 'Forwarded by you' : <>Forwarded by <Txt variant="caption" content color={mc.fg}>{m.forwarded_by_name ?? 'someone'}</Txt></>}
+                      </Txt>
                     </View>
                   ) : null}
-                  {m.links.map((l) => {
-                    const { host, rest } = splitUrl(l.url, l.domain);
+                  {m.text ? <Txt content selectable>{m.text}</Txt> : null}
+                  {(() => {
+                    // The first voice file carries the transcript; later files (rare) play without it.
+                    let transcriptShown = false;
+                    const rows = m.files.map((f) => {
+                      if (fileGroup(f) === 'voice' && f.status === 'stored' && f.storage_path) {
+                        const withText = !transcriptShown;
+                        transcriptShown = true;
+                        return (
+                          <View key={f.id} style={{ backgroundColor: t.surface, borderRadius: radius.md, padding: space.md }}>
+                            <AudioPlayer storagePath={f.storage_path} duration={f.duration_seconds} words={withText ? m.transcript_words : null} transcript={withText ? m.transcript : null} />
+                          </View>
+                        );
+                      }
+                      return <AttachmentRow key={f.id} file={f} onOpen={() => openAttachment(f, { sender: m.sender_name, role: mr, sentAt: m.sent_at })} />;
+                    });
                     return (
-                      <Pressable key={l.id} onPress={() => Linking.openURL(l.url)} style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: t.surface, borderRadius: radius.md, padding: space.md }, pressed && styles.pressed]}>
-                        <Ionicons name="link" size={16} color={t.primary} />
-                        <Txt variant="label" color={t.primary} numberOfLines={1} style={{ flex: 1 }}>{host}{rest}</Txt>
-                        <Ionicons name="open-outline" size={15} color={t.primary} />
-                      </Pressable>
+                      <>
+                        {rows}
+                        {m.transcript && !transcriptShown ? (
+                          <View style={{ gap: 2 }}>
+                            <Txt variant="caption" color={mc.fg}>Transcribed from voice, may contain mistakes</Txt>
+                            <Txt content selectable>{m.transcript}</Txt>
+                          </View>
+                        ) : null}
+                      </>
                     );
-                  })}
+                  })()}
+                  {m.links.map((l) => <LinkChip key={l.id} link={l} />)}
                   {link ? <Btn small kind="inverse" icon="paper-plane" label="Open in Telegram" onPress={() => Linking.openURL(link)} style={{ alignSelf: 'flex-start' }} /> : null}
                 </Card>
               );
@@ -318,6 +343,7 @@ export default function ItemDetail() {
             </Card>
           </View>
         ) : null}
+        </Appear>
       </ScrollView>
 
       {changed.length ? (

@@ -1,6 +1,6 @@
 import { DEMO, demoApi, demoSignedUrl } from './demo';
 import { supabase } from './supabase';
-import type { AppConfig, FileRow, Item, ItemEvent, LibFile, LibLink, LinkRow, Message, SearchResult, Sender } from './types';
+import type { AppConfig, FileRow, Item, ItemEvent, LibFile, LibLink, LinkRow, Message, SearchResult, Sender, Subtask, TimelineMessage, TranscriptWord } from './types';
 
 // Every read and write the screens need. Demo mode answers from sample data.
 
@@ -9,30 +9,37 @@ type Result<T> = { data: T; error: string | null };
 const ITEM_COLUMNS =
   'id,type,title,details,status,priority,due_at,due_all_day,due_text,tags,needs_review,confidence,' +
   'dismissed,pinned,user_note,chat_id,source_message_id,source_sender_tg_id,source_sender_name,' +
-  'completed_at,created_at,updated_at';
+  'completed_at,waiting_since,created_at,updated_at';
 const FILE_COLUMNS = 'id,message_id,kind,file_name,mime_type,size_bytes,duration_seconds,storage_path,status,starred,created_at';
-const LINK_COLUMNS = 'id,message_id,url,domain,starred,created_at';
+const LINK_COLUMNS = 'id,message_id,url,domain,starred,created_at,title,description,image_url,favicon_url,meta_status';
+const SUBTASK_COLUMNS = 'id,item_id,title,done,position,created_at';
+const MESSAGE_COLUMNS =
+  'id,chat_id,tg_message_id,sender_tg_id,sender_name,sent_at,edited_at,kind,text,transcript,transcript_words,forwarded_by_tg_id,forwarded_by_name';
 const CONFIG_COLUMNS =
   'owner_tg_id,boss_tg_id,boss_name,timezone,morning_time,remind_before_minutes,digest_enabled,' +
   'notify_new_items,last_webhook_at,last_processed_at,last_error,last_error_at';
 
-type RawItem = Omit<Item, 'has_files'> & {
+type Derived = 'has_files' | 'steps_total' | 'steps_done';
+type RawItem = Omit<Item, Derived> & {
   item_messages: { messages: { files: { id: string }[] } | null }[] | null;
+  subtasks: { done: boolean }[] | null;
 };
 
 export async function fetchItems(): Promise<Result<Item[]>> {
   if (DEMO) return { data: await demoApi.fetchItems(), error: null };
   const { data, error } = await supabase
     .from('items')
-    .select(`${ITEM_COLUMNS},item_messages(messages(files(id)))`)
+    .select(`${ITEM_COLUMNS},item_messages(messages(files(id))),subtasks(done)`)
     .eq('dismissed', false)
     .order('created_at', { ascending: false })
     .limit(1000)
     .overrideTypes<RawItem[], { merge: false }>();
   return {
-    data: (data ?? []).map(({ item_messages, ...rest }) => ({
+    data: (data ?? []).map(({ item_messages, subtasks, ...rest }) => ({
       ...rest,
       has_files: (item_messages ?? []).some((im) => (im.messages?.files.length ?? 0) > 0),
+      steps_total: (subtasks ?? []).length,
+      steps_done: (subtasks ?? []).filter((x) => x.done).length,
     })),
     error: error?.message ?? null,
   };
@@ -41,8 +48,8 @@ export async function fetchItems(): Promise<Result<Item[]>> {
 /** One item, including dismissed ones (which the shared list leaves out). */
 export async function fetchItem(id: string): Promise<Item | null> {
   if (DEMO) return demoApi.fetchItem(id);
-  const { data } = await supabase.from('items').select(ITEM_COLUMNS).eq('id', id).maybeSingle().overrideTypes<Omit<Item, 'has_files'>, { merge: false }>();
-  return data ? { ...data, has_files: false } : null;
+  const { data } = await supabase.from('items').select(ITEM_COLUMNS).eq('id', id).maybeSingle().overrideTypes<Omit<Item, Derived>, { merge: false }>();
+  return data ? { ...data, has_files: false, steps_total: 0, steps_done: 0 } : null;
 }
 
 /** Writes the change and records it in the item's history. */
@@ -62,7 +69,7 @@ export async function fetchItemExtras(id: string): Promise<Result<{ messages: Me
   const [m, e] = await Promise.all([
     supabase
       .from('item_messages')
-      .select(`messages(id,chat_id,tg_message_id,sender_tg_id,sender_name,sent_at,edited_at,kind,text,transcript,files(${FILE_COLUMNS}),links(${LINK_COLUMNS}))`)
+      .select(`messages(${MESSAGE_COLUMNS},files(${FILE_COLUMNS}),links(${LINK_COLUMNS}))`)
       .eq('item_id', id)
       .overrideTypes<{ messages: Message | null }[], { merge: false }>(),
     supabase.from('item_events').select('id,item_id,actor,summary,created_at').eq('item_id', id).order('created_at', { ascending: false }).limit(50),
@@ -86,10 +93,13 @@ type RawOrigin = {
     sent_at: string;
     text: string | null;
     transcript: string | null;
+    transcript_words: TranscriptWord[] | null;
+    forwarded_by_tg_id: number | null;
+    forwarded_by_name: string | null;
     item_messages: { item_id: string }[];
   } | null;
 };
-const ORIGIN = 'messages(sender_tg_id,sender_name,sent_at,text,transcript,item_messages(item_id))';
+const ORIGIN = 'messages(sender_tg_id,sender_name,sent_at,text,transcript,transcript_words,forwarded_by_tg_id,forwarded_by_name,item_messages(item_id))';
 const flatten = <T extends { created_at: string }>({ messages, ...row }: T & RawOrigin) => ({
   ...row,
   sender_tg_id: messages?.sender_tg_id ?? null,
@@ -97,6 +107,9 @@ const flatten = <T extends { created_at: string }>({ messages, ...row }: T & Raw
   sent_at: messages?.sent_at ?? row.created_at,
   text: messages?.text ?? null,
   transcript: messages?.transcript ?? null,
+  transcript_words: messages?.transcript_words ?? null,
+  forwarded_by_tg_id: messages?.forwarded_by_tg_id ?? null,
+  forwarded_by_name: messages?.forwarded_by_name ?? null,
   item_id: messages?.item_messages[0]?.item_id ?? null,
 });
 
@@ -109,6 +122,61 @@ export async function fetchLibrary(): Promise<Result<{ files: LibFile[]; links: 
   return {
     data: { files: (f.data ?? []).map((r) => flatten(r) as LibFile), links: (l.data ?? []).map((r) => flatten(r) as LibLink) },
     error: f.error?.message ?? l.error?.message ?? null,
+  };
+}
+
+// ------------------------------------------------------------------ checklist
+
+export async function fetchSubtasks(itemId: string): Promise<Result<Subtask[]>> {
+  if (DEMO) return { data: await demoApi.fetchSubtasks(itemId), error: null };
+  const { data, error } = await supabase.from('subtasks').select(SUBTASK_COLUMNS).eq('item_id', itemId).order('position').order('created_at');
+  return { data: (data ?? []) as Subtask[], error: error?.message ?? null };
+}
+
+export async function addSubtask(itemId: string, title: string, position: number): Promise<Result<Subtask | null>> {
+  if (DEMO) return { data: await demoApi.addSubtask(itemId, title, position), error: null };
+  const { data, error } = await supabase.from('subtasks').insert({ item_id: itemId, title, position }).select(SUBTASK_COLUMNS).single();
+  return { data: (data as Subtask | null) ?? null, error: error?.message ?? null };
+}
+
+export async function updateSubtask(id: string, patch: Partial<Pick<Subtask, 'title' | 'done' | 'position'>>): Promise<string | null> {
+  if (DEMO) {
+    await demoApi.updateSubtask(id, patch);
+    return null;
+  }
+  const { error } = await supabase.from('subtasks').update(patch).eq('id', id);
+  return error?.message ?? null;
+}
+
+export async function deleteSubtask(id: string): Promise<string | null> {
+  if (DEMO) {
+    await demoApi.deleteSubtask(id);
+    return null;
+  }
+  const { error } = await supabase.from('subtasks').delete().eq('id', id);
+  return error?.message ?? null;
+}
+
+// ------------------------------------------------------------------ timeline
+
+type RawTimeline = Omit<TimelineMessage, 'items'> & { item_messages: { items: { id: string; title: string; type: Item['type']; dismissed: boolean } | null }[] | null };
+
+/** The latest messages of the group, newest first, with the items made from each. */
+export async function fetchTimeline(limit = 300): Promise<Result<TimelineMessage[]>> {
+  if (DEMO) return { data: await demoApi.fetchTimeline(), error: null };
+  const { data, error } = await supabase
+    .from('messages')
+    .select(`${MESSAGE_COLUMNS},files(${FILE_COLUMNS}),item_messages(items(id,title,type,dismissed))`)
+    .neq('kind', 'service')
+    .order('sent_at', { ascending: false })
+    .limit(limit)
+    .overrideTypes<RawTimeline[], { merge: false }>();
+  return {
+    data: (data ?? []).map(({ item_messages, ...m }) => ({
+      ...m,
+      items: (item_messages ?? []).flatMap((im) => (im.items && !im.items.dismissed ? [{ id: im.items.id, title: im.items.title, type: im.items.type }] : [])),
+    })),
+    error: error?.message ?? null,
   };
 }
 
@@ -188,6 +256,7 @@ export function subscribe(onChange: () => void): () => void {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'items' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'files' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'links' }, onChange)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'subtasks' }, onChange)
     .subscribe();
   return () => {
     supabase.removeChannel(channel);

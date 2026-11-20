@@ -9,19 +9,23 @@ import { useFonts } from 'expo-font';
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useState } from 'react';
-import { View, useColorScheme } from 'react-native';
+import * as SystemUI from 'expo-system-ui';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { GalleryHost } from '@/components/Gallery';
 import { Intro } from '@/components/Intro';
+import { UpdateGate } from '@/components/UpdateGate';
 import { AuthProvider, useAuth } from '@/lib/auth';
 import { DataProvider } from '@/lib/data';
-import { useTheme } from '@/lib/theme';
+import { preloadPrefs } from '@/lib/prefs';
+import { THEME_PREF_KEYS, useTheme } from '@/lib/theme';
 
 // Keep the native splash up until fonts and the saved session are known, so the
 // login screen never flashes for someone who is already signed in.
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
-function Routes({ fontsReady }: { fontsReady: boolean }) {
+function Routes({ ready }: { ready: boolean }) {
   const { signedIn, loading } = useAuth();
   const t = useTheme();
   const [intro, setIntro] = useState(true);
@@ -30,27 +34,34 @@ function Routes({ fontsReady }: { fontsReady: boolean }) {
   }, []);
   const finish = useCallback(() => setIntro(false), []);
 
-  if (!fontsReady || loading) return null;
+  if (!ready || loading) return null;
   return (
     <View style={{ flex: 1, backgroundColor: t.bg }}>
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg } }}>
+      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: t.bg }, animation: 'slide_from_right', animationDuration: 220 }}>
         <Stack.Protected guard={signedIn}>
           <Stack.Screen name="(tabs)" />
-          <Stack.Screen name="item/[id]" />
-          <Stack.Screen name="search" />
+          {/* A card opens into its detail: the detail rises and fades in over the list. */}
+          <Stack.Screen name="item/[id]" options={{ animation: 'fade_from_bottom' }} />
+          <Stack.Screen name="project/[tag]" options={{ animation: 'fade_from_bottom' }} />
+          <Stack.Screen name="projects" />
+          <Stack.Screen name="timeline" />
+          <Stack.Screen name="search" options={{ animation: 'fade' }} />
           <Stack.Screen name="settings" />
         </Stack.Protected>
         <Stack.Protected guard={!signedIn}>
           <Stack.Screen name="login" />
         </Stack.Protected>
       </Stack>
+      <GalleryHost />
+      <UpdateGate />
       {intro ? <Intro onReady={hideNative} onDone={finish} /> : null}
     </View>
   );
 }
 
 export default function RootLayout() {
-  const scheme = useColorScheme();
+  const t = useTheme();
+  const [prefsReady, setPrefsReady] = useState(false);
   const [loaded, fontError] = useFonts({
     HindSiliguri_400Regular,
     HindSiliguri_500Medium,
@@ -60,14 +71,29 @@ export default function RootLayout() {
     PlusJakartaSans_700Bold,
     PlusJakartaSans_800ExtraBold,
   });
+
+  // The chosen theme and text size are read before the first screen shows, so it never flashes the defaults.
+  useEffect(() => {
+    preloadPrefs(THEME_PREF_KEYS).finally(() => setPrefsReady(true));
+  }, []);
+  // The window behind the screens matches the theme (visible during transitions and overscroll).
+  useEffect(() => {
+    SystemUI.setBackgroundColorAsync(t.bg).catch(() => {});
+  }, [t.bg]);
+
+  const navTheme = useMemo(() => {
+    const base = t.dark ? DarkTheme : DefaultTheme;
+    return { ...base, colors: { ...base.colors, background: t.bg, card: t.surface, text: t.text, border: t.border, primary: t.primary } };
+  }, [t]);
+
   return (
     <SafeAreaProvider>
-      <ThemeProvider value={scheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={navTheme}>
         <AuthProvider>
           <DataProvider>
             {/* A font that fails to load must not strand the user on the splash. */}
-            <Routes fontsReady={loaded || !!fontError} />
-            <StatusBar style="auto" />
+            <Routes ready={(loaded || !!fontError) && prefsReady} />
+            <StatusBar style={t.dark ? 'light' : 'dark'} />
           </DataProvider>
         </AuthProvider>
       </ThemeProvider>

@@ -1,5 +1,5 @@
 export type ItemType = 'task' | 'note';
-export type Status = 'todo' | 'doing' | 'done';
+export type Status = 'todo' | 'doing' | 'waiting' | 'done';
 export type Priority = 'low' | 'normal' | 'high' | 'urgent';
 export type Role = 'boss' | 'me' | 'other';
 export type RoleFilter = 'all' | 'boss' | 'me';
@@ -25,11 +25,28 @@ export type Item = {
   source_sender_tg_id: number | null;
   source_sender_name: string | null;
   completed_at: string | null;
+  /** Set by the database while status is 'waiting' (delivered, waiting for the boss). */
+  waiting_since: string | null;
   created_at: string;
   updated_at: string;
   /** Derived client-side from the linked messages. */
   has_files: boolean;
+  /** Derived client-side from the checklist. */
+  steps_total: number;
+  steps_done: number;
 };
+
+export type Subtask = {
+  id: string;
+  item_id: string;
+  title: string;
+  done: boolean;
+  position: number;
+  created_at: string;
+};
+
+/** One spoken word of a voice transcript with its start and end in seconds. */
+export type TranscriptWord = { w: string; s: number; e: number };
 
 export type FileRow = {
   id: string;
@@ -52,6 +69,12 @@ export type LinkRow = {
   domain: string | null;
   starred: boolean;
   created_at: string;
+  /** Preview fetched by the bot; all optional, and absent until meta_status is 'done'. */
+  title: string | null;
+  description: string | null;
+  image_url: string | null;
+  favicon_url: string | null;
+  meta_status: 'pending' | 'done' | 'failed';
 };
 
 /** Where a library entry came from: who sent it, when, and the item made from it. */
@@ -61,6 +84,9 @@ export type Origin = {
   sent_at: string;
   text: string | null;
   transcript: string | null;
+  transcript_words: TranscriptWord[] | null;
+  forwarded_by_tg_id: number | null;
+  forwarded_by_name: string | null;
   item_id: string | null;
 };
 
@@ -78,8 +104,17 @@ export type Message = {
   kind: string;
   text: string | null;
   transcript: string | null;
+  transcript_words: TranscriptWord[] | null;
+  /** When set, this person forwarded the message into the group; sender_* is the original author. */
+  forwarded_by_tg_id: number | null;
+  forwarded_by_name: string | null;
   files: FileRow[];
   links: LinkRow[];
+};
+
+/** A message on the timeline with the items made from it. */
+export type TimelineMessage = Omit<Message, 'links'> & {
+  items: { id: string; title: string; type: ItemType }[];
 };
 
 export type ItemEvent = {

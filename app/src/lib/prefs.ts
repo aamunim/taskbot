@@ -7,6 +7,20 @@ const cache = new Map<string, unknown>();
 const listeners = new Map<string, Set<(v: unknown) => void>>();
 const storageKey = (key: string) => `pref:${key}`;
 
+/** Reads the given keys into memory once, so the first paint already has them (theme, text size). */
+export async function preloadPrefs(keys: string[]): Promise<void> {
+  try {
+    const rows = await AsyncStorage.multiGet(keys.map(storageKey));
+    rows.forEach(([, raw], i) => {
+      if (raw != null && !cache.has(keys[i])) cache.set(keys[i], JSON.parse(raw));
+    });
+  } catch {
+    // Defaults are fine if storage cannot be read.
+  }
+}
+
+export const getPref = <T,>(key: string, initial: T): T => (cache.has(key) ? (cache.get(key) as T) : initial);
+
 export function setPref<T>(key: string, value: T) {
   cache.set(key, value);
   listeners.get(key)?.forEach((fn) => fn(value));

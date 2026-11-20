@@ -67,7 +67,7 @@ export default function Search() {
             placeholder="Tasks, notes, files, messages"
             placeholderTextColor={t.faint}
             returnKeyType="search"
-            style={[{ flex: 1, color: t.text, fontFamily: content.regular, fontSize: 16, paddingVertical: 11 }, noOutline]}
+            style={[{ flex: 1, color: t.text, fontFamily: content.regular, fontSize: 16 * t.scale, paddingVertical: 11 }, noOutline]}
           />
           {q ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setQ('')} accessibilityLabel="Clear search" /> : null}
         </View>

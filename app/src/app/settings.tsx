@@ -1,5 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { DateTimePickerAndroid } from '@react-native-community/datetimepicker';
+import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
 import { Alert, Platform, Pressable, ScrollView, View } from 'react-native';
@@ -9,7 +10,10 @@ import { useData } from '@/lib/data';
 import { DEMO } from '@/lib/demo';
 import { fmtDateTime, plural } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
-import { radius, space, useTheme } from '@/lib/theme';
+import { tap } from '@/lib/haptics';
+import { usePref } from '@/lib/prefs';
+import { ACCENTS, APPEARANCES, PREF_ACCENT, PREF_APPEARANCE, PREF_TEXT_SIZE, TEXT_SIZES, radius, space, useTheme, type Accent, type Appearance, type TextSize } from '@/lib/theme';
+import { checkForUpdate, restartToUpdate, runningVersion, showUpdatePrompt, useUpdateState } from '@/lib/updates';
 import type { Sender } from '@/lib/types';
 
 const REMIND: { minutes: number; label: string }[] = [
@@ -32,6 +36,11 @@ export default function SettingsScreen() {
   const [senders, setSenders] = useState<Sender[]>([]);
   const [picking, setPicking] = useState(false);
   const { signOut } = useAuth();
+  const [accent, setAccent] = usePref<Accent>(PREF_ACCENT, 'indigo');
+  const [appearance, setAppearance] = usePref<Appearance>(PREF_APPEARANCE, 'system');
+  const [textSize, setTextSize] = usePref<TextSize>(PREF_TEXT_SIZE, 'default');
+  const update = useUpdateState();
+  const running = runningVersion();
 
   useFocusEffect(
     useCallback(() => {
@@ -121,6 +130,30 @@ export default function SettingsScreen() {
           </View>
         </Card>
 
+        <SectionHeader title="Appearance" />
+        <Card style={{ gap: space.lg }}>
+          <View style={{ gap: space.sm }}>
+            <Txt variant="body" strong>Colour</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {ACCENTS.map((a) => <Chip key={a.value} label={a.label} dot={a.swatch} active={accent === a.value} onPress={() => { tap(); setAccent(a.value); }} />)}
+            </View>
+          </View>
+          <View style={{ gap: space.sm }}>
+            <Txt variant="body" strong>Mode</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {APPEARANCES.map((a) => <Chip key={a.value} label={a.label} active={appearance === a.value} onPress={() => { tap(); setAppearance(a.value); }} />)}
+            </View>
+            <Txt variant="caption" sub>Black is a dark mode with true black backgrounds, for OLED screens.</Txt>
+          </View>
+          <View style={{ gap: space.sm }}>
+            <Txt variant="body" strong>Text size</Txt>
+            <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+              {TEXT_SIZES.map((a) => <Chip key={a.value} label={a.label} active={textSize === a.value} onPress={() => { tap(); setTextSize(a.value); }} />)}
+            </View>
+            <Txt variant="caption" sub>Boss and Me keep their amber and teal in every colour.</Txt>
+          </View>
+        </Card>
+
         <SectionHeader title="Reminders" />
         <Card style={{ gap: space.lg }}>
           <Txt variant="caption" sub>Reminders arrive as private Telegram messages from the bot.</Txt>
@@ -160,6 +193,35 @@ export default function SettingsScreen() {
               <Txt variant="caption" sub selectable>{cfg.last_error}</Txt>
             </View>
           ) : null}
+        </Card>
+
+        <SectionHeader title="App" />
+        <Card style={{ gap: space.md }}>
+          <Fact label="Version" value={`${Constants.expoConfig?.version ?? '–'} · ${running.update}`} />
+          {running.channel ? <Fact label="Update channel" value={running.channel} /> : null}
+          <View style={{ height: 1, backgroundColor: t.border }} />
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+            <View style={{ flex: 1 }}>
+              <Txt variant="body" strong>
+                {update.phase === 'checking' ? 'Checking for updates…'
+                  : update.phase === 'downloading' ? `Downloading update${update.progress != null ? ` · ${Math.round(update.progress * 100)}%` : '…'}`
+                  : update.phase === 'ready' ? 'Update ready'
+                  : update.phase === 'current' ? 'You have the latest version'
+                  : update.phase === 'error' ? 'Could not check for updates'
+                  : 'App updates'}
+              </Txt>
+              <Txt variant="caption" color={update.phase === 'error' ? t.danger : t.sub}>
+                {update.phase === 'ready' ? 'Restart the app to start using it.'
+                  : update.phase === 'error' ? (update.error ?? 'Please try again later.')
+                  : 'Updates download on their own when you open the app.'}
+              </Txt>
+            </View>
+            {update.phase === 'ready' ? (
+              <Btn small icon="refresh" label="Restart" onPress={() => (DEMO ? showUpdatePrompt() : restartToUpdate())} />
+            ) : (
+              <Btn small kind="soft" label="Check" disabled={update.phase === 'checking' || update.phase === 'downloading'} onPress={() => checkForUpdate(true)} />
+            )}
+          </View>
         </Card>
 
         <Btn kind="danger" icon="log-out-outline" label="Sign out" onPress={logout} style={{ marginTop: space.xxl }} />

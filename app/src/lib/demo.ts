@@ -1,4 +1,4 @@
-import type { AppConfig, Item, ItemEvent, LibFile, LibLink, Message, SearchResult, Sender } from './types';
+import type { AppConfig, Item, ItemEvent, LibFile, LibLink, Message, SearchResult, Sender, Subtask, TimelineMessage, TranscriptWord } from './types';
 
 /**
  * Demo mode: sample data and no network, for design review and screenshots.
@@ -23,6 +23,34 @@ const endOfDay = (days: number) => {
   const utc = Date.UTC(dhaka.getUTCFullYear(), dhaka.getUTCMonth(), dhaka.getUTCDate() + days, 23, 59) - 6 * HOUR;
   return new Date(utc).toISOString();
 };
+
+/** A moment today (Dhaka time) that is already in the past, so the sample overdue task is always "today". */
+const earlierToday = () => {
+  const dhaka = new Date(Date.now() + 6 * HOUR);
+  const startOfToday = Date.UTC(dhaka.getUTCFullYear(), dhaka.getUTCMonth(), dhaka.getUTCDate()) - 6 * HOUR;
+  return new Date(Math.min(Date.now() - 10 * 60_000, Math.max(startOfToday + 60_000, Date.now() - 5 * HOUR))).toISOString();
+};
+/** `hour`:00 Dhaka time, `days` from today. */
+const dayAt = (days: number, hour: number) => {
+  const dhaka = new Date(Date.now() + 6 * HOUR);
+  return new Date(Date.UTC(dhaka.getUTCFullYear(), dhaka.getUTCMonth(), dhaka.getUTCDate() + days, hour) - 6 * HOUR).toISOString();
+};
+
+/** Spreads the words of a transcript over `total` seconds with natural pauses at punctuation. */
+function timed(text: string, total: number): TranscriptWord[] {
+  const words = text.split(/\s+/).filter(Boolean);
+  const weights = words.map((w) => w.length + 2 + (/[,।.?]$/.test(w) ? 6 : 0));
+  const sum = weights.reduce((a, b) => a + b, 0);
+  let at = 0.4;
+  const span = total - 0.8;
+  return words.map((w, i) => {
+    const len = (weights[i] / sum) * span;
+    const pause = /[,।.?]$/.test(w) ? len * 0.45 : len * 0.12;
+    const word = { w, s: Math.round(at * 100) / 100, e: Math.round((at + len - pause) * 100) / 100 };
+    at += len;
+    return word;
+  });
+}
 
 const svg = (body: string, bg: string) =>
   `data:image/svg+xml;base64,${btoa(
@@ -86,14 +114,21 @@ const item = (s: Seed, createdHoursAgo: number): Item => ({
   source_sender_tg_id: s.by,
   source_sender_name: nameOf(s.by),
   completed_at: s.status === 'done' ? ago(3) : null,
+  waiting_since: s.status === 'waiting' ? ago(52) : null,
   created_at: ago(createdHoursAgo),
   updated_at: ago(createdHoursAgo),
   has_files: false,
+  steps_total: 0,
+  steps_done: 0,
   ...s,
 });
 
+/** A finished task from an earlier day, for the weekly chart and the streak. */
+const past = (id: string, by: number, title: string, daysAgo: number, tags: string[], late = false): Item =>
+  item({ id, type: 'task', by, title, tags, status: 'done', due_at: endOfDay(-daysAgo), due_all_day: true, completed_at: dayAt(late ? -daysAgo + 1 : -daysAgo, 15), created_at: dayAt(-daysAgo - 1, 11) }, 0);
+
 let items: Item[] = [
-  item({ id: 't1', type: 'task', by: BOSS, title: 'ক্লায়েন্ট প্রেজেন্টেশনের স্লাইড চূড়ান্ত করা', details: 'Q3 বিক্রির চার্ট যোগ করতে হবে, শেষ স্লাইডে মূল্য তালিকা। ব্র্যান্ডের রং ব্যবহার করবে।', priority: 'urgent', due_at: ago(5), due_text: 'আজ দুপুরের মধ্যে', tags: ['client', 'acme'], has_files: true }, 28),
+  item({ id: 't1', type: 'task', by: BOSS, title: 'ক্লায়েন্ট প্রেজেন্টেশনের স্লাইড চূড়ান্ত করা', details: 'Q3 বিক্রির চার্ট যোগ করতে হবে, শেষ স্লাইডে মূল্য তালিকা। ব্র্যান্ডের রং ব্যবহার করবে।', priority: 'urgent', due_at: earlierToday(), due_text: 'আজ দুপুরের মধ্যে', tags: ['client', 'acme'], has_files: true }, 28),
   item({ id: 't2', type: 'task', by: BOSS, title: 'মাসিক বিক্রয় রিপোর্ট পাঠানো', details: 'অক্টোবরের রিপোর্ট Excel ফরম্যাটে, অঞ্চলভিত্তিক ভাগ সহ।', priority: 'high', due_at: ahead(3), due_text: 'আজ সন্ধ্যা ৬টার মধ্যে', tags: ['report'], status: 'doing', has_files: true }, 20),
   item({ id: 't3', type: 'task', by: BOSS, title: 'ভেন্ডরের সাথে ডেলিভারির তারিখ নিশ্চিত করা', due_at: endOfDay(0), due_all_day: true, due_text: 'আজকের মধ্যে', tags: ['vendor'] }, 9),
   item({ id: 't4', type: 'task', by: ME, title: 'অফিসের ইন্টারনেট বিল জমা দেওয়া', due_at: endOfDay(0), due_all_day: true, tags: ['office'], status: 'done' }, 30),
@@ -103,6 +138,17 @@ let items: Item[] = [
   item({ id: 't8', type: 'task', by: BOSS, title: 'ওয়েবসাইটের যোগাযোগ পাতার ফোন নম্বর আপডেট', priority: 'low', tags: ['website'] }, 70),
   item({ id: 't9', type: 'task', by: BOSS, title: 'চালান #২০৪৫ ক্লায়েন্টকে ইমেইল করা', status: 'done', tags: ['client', 'invoice'] }, 52),
   item({ id: 't10', type: 'task', by: ME, title: 'প্রিন্টারের টোনার অর্ডার করা', status: 'doing', tags: ['office'] }, 50),
+  item({ id: 't11', type: 'task', by: BOSS, title: 'চুক্তিপত্রের স্ক্যান কপি আজ রাতের মধ্যে পাঠানো', details: 'স্যার ব্যক্তিগত চ্যাটে বলেছিলেন; স্বাক্ষরসহ সব পাতা লাগবে।', due_at: endOfDay(0), due_all_day: true, due_text: 'আজ রাতের মধ্যে', tags: ['acme', 'client'], priority: 'high' }, 1.5),
+  item({ id: 'w1', type: 'task', by: BOSS, title: 'Acme প্রস্তাবের খসড়া স্যারের অনুমোদনের জন্য পাঠানো', status: 'waiting', due_at: endOfDay(-2), due_all_day: true, tags: ['acme', 'client'], waiting_since: ago(52) }, 96),
+  item({ id: 'w2', type: 'task', by: ME, title: 'ছুটির আবেদন জমা দিয়েছি, অনুমোদনের অপেক্ষা', status: 'waiting', tags: ['hr'], waiting_since: ago(5) }, 30),
+  past('h1', BOSS, 'সাপ্তাহিক বিক্রয় সারাংশ পাঠানো', 1, ['report']),
+  past('h2', ME, 'কুরিয়ারের রসিদ স্ক্যান করা', 1, ['office']),
+  past('h3', BOSS, 'ক্লায়েন্টের ফিডব্যাক তালিকা তৈরি', 2, ['client', 'acme']),
+  past('h4', BOSS, 'ভেন্ডরের কোটেশন তুলনা করা', 3, ['vendor']),
+  past('h5', BOSS, 'সোশ্যাল মিডিয়া পোস্টের খসড়া', 3, ['design']),
+  past('h6', ME, 'মিটিং রুম বুক করা', 4, ['meeting']),
+  past('h7', BOSS, 'ওয়েবসাইটের ব্যানার বদলানো', 5, ['website'], true),
+  past('h8', BOSS, 'অক্টোবরের খরচের হিসাব মেলানো', 6, ['report', 'budget']),
   item({ id: 'r1', type: 'task', by: BOSS, title: 'ওটা কাল দেখে জানিও', details: 'কোন বিষয়ে তা পরিষ্কার নয়; আগের মেসেজে বাজেট শিটের কথা ছিল।', needs_review: true, confidence: 0.48, due_at: endOfDay(1), due_all_day: true, due_text: 'কাল' }, 2),
   item({ id: 'r2', type: 'note', by: OTHER, title: 'শুক্রবার অফিস অর্ধদিবস খোলা থাকতে পারে', needs_review: true, confidence: 0.61, tags: ['office'] }, 4),
   item({ id: 'n1', type: 'note', by: BOSS, title: 'ক্লায়েন্টকে পাঠানো সব ফাইল PDF হবে, Word নয়', details: 'ফাইলের নামে তারিখ থাকবে: প্রকল্প_তারিখ.pdf', pinned: true, tags: ['client', 'rule'] }, 90),
@@ -130,6 +176,9 @@ const file = (id: string, by: number, hours: number, f: Partial<LibFile> & Pick<
   sent_at: ago(hours),
   text: null,
   transcript: null,
+  transcript_words: null,
+  forwarded_by_tg_id: null,
+  forwarded_by_name: null,
   item_id: null,
   ...f,
 });
@@ -146,8 +195,8 @@ let files: LibFile[] = [
   file('d3', BOSS, 40, { kind: 'document', file_name: 'Onboarding_Checklist.docx', mime_type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', size_bytes: 54_000, storage_path: 'demo/onboarding.docx', item_id: 't5' }),
   file('d4', ME, 33, { kind: 'document', file_name: 'Report_Template.pptx', mime_type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', size_bytes: 3_200_000, storage_path: 'demo/template.pptx', item_id: 'n6' }),
   file('d5', BOSS, 96, { kind: 'video', file_name: 'product-demo.mp4', mime_type: 'video/mp4', size_bytes: 48_000_000, status: 'too_large' }),
-  file('v1', BOSS, 9, { kind: 'voice', mime_type: 'audio/ogg', size_bytes: 61_000, duration_seconds: 38, storage_path: 'demo/v1.ogg', item_id: 't3', transcript: 'ভেন্ডরকে ফোন করে ডেলিভারির তারিখটা আজকের মধ্যেই নিশ্চিত করে নিও, দেরি হলে আমাকে জানাবে।' }),
-  file('v2', BOSS, 26, { kind: 'voice', mime_type: 'audio/ogg', size_bytes: 122_000, duration_seconds: 74, storage_path: 'demo/v2.ogg', item_id: 'n2', transcript: 'Acme-তে এখন থেকে তানভীর সাহেবের সাথে কথা বলবে, আগের জন আর এই প্রজেক্টে নেই।' }),
+  file('v1', BOSS, 9, { kind: 'voice', mime_type: 'audio/ogg', size_bytes: 61_000, duration_seconds: 38, storage_path: 'demo/v1.ogg', item_id: 't3', transcript: 'ভেন্ডরকে ফোন করে ডেলিভারির তারিখটা আজকের মধ্যেই নিশ্চিত করে নিও, দেরি হলে আমাকে জানাবে।', transcript_words: timed('ভেন্ডরকে ফোন করে ডেলিভারির তারিখটা আজকের মধ্যেই নিশ্চিত করে নিও, দেরি হলে আমাকে জানাবে।', 38) }),
+  file('v2', BOSS, 26, { kind: 'voice', mime_type: 'audio/ogg', size_bytes: 122_000, duration_seconds: 74, storage_path: 'demo/v2.ogg', item_id: 'n2', transcript: 'Acme-তে এখন থেকে তানভীর সাহেবের সাথে কথা বলবে, আগের জন আর এই প্রজেক্টে নেই।', transcript_words: timed('Acme-তে এখন থেকে তানভীর সাহেবের সাথে কথা বলবে, আগের জন আর এই প্রজেক্টে নেই।', 74) }),
   file('v3', ME, 8, { kind: 'voice', mime_type: 'audio/ogg', size_bytes: 33_000, duration_seconds: 19, storage_path: 'demo/v3.ogg', item_id: 'n4', transcript: 'স্যার, ভেন্ডর জানিয়েছে নমুনা বুধবার পৌঁছাবে।' }),
 ];
 
@@ -163,57 +212,138 @@ const link = (id: string, by: number, hours: number, url: string, text: string, 
   sent_at: ago(hours),
   text,
   transcript: null,
+  transcript_words: null,
+  forwarded_by_tg_id: null,
+  forwarded_by_name: null,
   item_id: null,
+  title: null,
+  description: null,
+  image_url: null,
+  favicon_url: null,
+  meta_status: 'pending',
   ...extra,
 });
 
+const favicon = (bg: string, body: string) => `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64"><rect width="64" height="64" rx="14" fill="${bg}"/>${body}</svg>`)}`;
+const FAV = {
+  sheets: favicon('#188038', '<rect x="16" y="14" width="32" height="36" rx="3" fill="#fff"/><path d="M16 26h32M16 38h32M30 14v36" stroke="#188038" stroke-width="3"/>'),
+  docs: favicon('#1A73E8', '<rect x="17" y="13" width="30" height="38" rx="3" fill="#fff"/><path d="M23 25h18M23 32h18M23 39h12" stroke="#1A73E8" stroke-width="3" stroke-linecap="round"/>'),
+  figma: favicon('#1E1E1E', '<circle cx="26" cy="20" r="7" fill="#F24E1E"/><circle cx="38" cy="20" r="7" fill="#FF7262"/><circle cx="26" cy="32" r="7" fill="#A259FF"/><circle cx="38" cy="32" r="7" fill="#1ABCFE"/><circle cx="26" cy="44" r="7" fill="#0ACF83"/>'),
+  acme: favicon('#0E7490', '<path d="M32 14 L48 48 H16 Z" fill="#fff"/>'),
+  youtube: favicon('#FF0000', '<path d="M26 22 L44 32 L26 42 Z" fill="#fff"/>'),
+};
+const cover = (body: string, bg: string) => `data:image/svg+xml;base64,${btoa(`<svg xmlns="http://www.w3.org/2000/svg" width="600" height="315" viewBox="0 0 600 315"><rect width="600" height="315" fill="${bg}"/>${body}</svg>`)}`;
+
 let links: LibLink[] = [
-  link('l1', BOSS, 4, 'https://docs.google.com/spreadsheets/d/1AbCdEfGh/edit#gid=0', 'বাজেট শিটটা এখানে, আজ আপডেট করে দিও', { starred: true, item_id: 'n3' }),
-  link('l2', BOSS, 27, 'https://www.figma.com/file/Xy12/Acme-Deck', 'প্রেজেন্টেশনের ডিজাইন ফাইল', { item_id: 't1' }),
+  link('l1', BOSS, 4, 'https://docs.google.com/spreadsheets/d/1AbCdEfGh/edit#gid=0', 'বাজেট শিটটা এখানে, আজ আপডেট করে দিও', { starred: true, item_id: 'n3', meta_status: 'done', title: 'Marketing budget Q4', favicon_url: FAV.sheets }),
+  link('l2', BOSS, 27, 'https://www.figma.com/file/Xy12/Acme-Deck', 'প্রেজেন্টেশনের ডিজাইন ফাইল', { item_id: 't1', meta_status: 'done', title: 'Acme Deck – Figma', description: 'Client presentation, 14 frames', favicon_url: FAV.figma, image_url: cover('<rect x="40" y="40" width="240" height="150" rx="10" fill="#fff"/><rect x="320" y="40" width="240" height="150" rx="10" fill="#C7B8FF"/><rect x="40" y="215" width="330" height="20" rx="8" fill="#fff"/><rect x="40" y="250" width="200" height="14" rx="7" fill="#A259FF"/>', '#2C2C2C') }),
   link('l3', ME, 6, 'https://drive.google.com/file/d/9ZyXwV/view', 'স্যার, ব্যানারের সংশোধিত কপি এখানে আপলোড করেছি', { item_id: 't6' }),
-  link('l4', BOSS, 50, 'https://acme.example/brand-guidelines', 'ব্র্যান্ড গাইডলাইন, রং এখান থেকে নেবে', { starred: true }),
-  link('l5', OTHER, 76, 'https://meet.google.com/abc-defg-hij', 'সোমবারের মিটিংয়ের লিংক'),
-  link('l6', ME, 34, 'https://docs.google.com/document/d/7QwErTy/edit', 'রিপোর্টের খসড়া', { item_id: 'n6' }),
-  link('l7', BOSS, 130, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'এই ভিডিওটার মতো করে প্রোডাক্ট ডেমো বানাতে হবে'),
+  link('l4', BOSS, 50, 'https://acme.example/brand-guidelines', 'ব্র্যান্ড গাইডলাইন, রং এখান থেকে নেবে', { starred: true, item_id: 't1', meta_status: 'done', title: 'Brand guidelines | Acme', description: 'Logo usage, colour palette and typography for partners.', favicon_url: FAV.acme, image_url: cover('<circle cx="120" cy="157" r="70" fill="#0E7490"/><circle cx="270" cy="157" r="70" fill="#F59E0B"/><circle cx="420" cy="157" r="70" fill="#16142B"/>', '#E6F4F7') }),
+  link('l5', OTHER, 76, 'https://meet.google.com/abc-defg-hij', 'সোমবারের মিটিংয়ের লিংক', { meta_status: 'failed' }),
+  link('l6', ME, 34, 'https://docs.google.com/document/d/7QwErTy/edit', 'রিপোর্টের খসড়া', { item_id: 'n6', meta_status: 'done', title: 'October report draft', favicon_url: 'data:image/png;base64,AAAA' }),
+  link('l7', BOSS, 130, 'https://www.youtube.com/watch?v=dQw4w9WgXcQ', 'এই ভিডিওটার মতো করে প্রোডাক্ট ডেমো বানাতে হবে', { meta_status: 'done', title: 'How to film a 60-second product demo', description: 'A short walkthrough of lighting, framing and pacing.', favicon_url: FAV.youtube, image_url: cover('<circle cx="300" cy="157" r="54" fill="#FF0000"/><path d="M284 130 L332 157 L284 184 Z" fill="#fff"/>', '#1F1F1F') }),
 ];
+
+const step = (id: string, item_id: string, position: number, title: string, done = false): Subtask => ({ id, item_id, title, done, position, created_at: ago(20) });
+let subtasks: Subtask[] = [
+  step('s1', 't1', 0, 'Q3 বিক্রির চার্ট বসানো', true),
+  step('s2', 't1', 1, 'ব্র্যান্ডের রং ঠিক করা', true),
+  step('s3', 't1', 2, 'মূল্য তালিকার স্লাইড', true),
+  step('s4', 't1', 3, 'বানান দেখে নেওয়া'),
+  step('s5', 't1', 4, 'PDF করে স্যারকে পাঠানো'),
+  step('s6', 't2', 0, 'অঞ্চলভিত্তিক ডেটা সংগ্রহ', true),
+  step('s7', 't2', 1, 'Excel-এ সাজানো', true),
+  step('s8', 't2', 2, 'স্যারকে ইমেইল করা'),
+  step('s9', 't5', 0, 'প্রথম সপ্তাহের সময়সূচি', true),
+  step('s10', 't5', 1, 'টুলের তালিকা'),
+  step('s11', 't5', 2, 'যোগাযোগের নম্বর'),
+  step('s12', 't5', 3, 'HR-কে দেখানো'),
+];
+const withSteps = (i: Item): Item => {
+  const mine = subtasks.filter((x) => x.item_id === i.id);
+  return { ...i, steps_total: mine.length, steps_done: mine.filter((x) => x.done).length };
+};
+/** The one sample message the owner forwarded into the group from a private chat. */
+const FORWARDED = new Set(['t11']);
 
 const delay = <T,>(value: T) => new Promise<T>((r) => setTimeout(() => r(value), 30));
 
+function messageOf(it: Item): Message {
+  const mine = files.filter((f) => f.item_id === it.id);
+  const voice = mine.find((f) => f.kind === 'voice');
+  return {
+    id: `m-${it.id}`,
+    chat_id: -1001234567890,
+    tg_message_id: 4812,
+    sender_tg_id: it.source_sender_tg_id,
+    sender_name: it.source_sender_name,
+    sent_at: it.created_at,
+    edited_at: null,
+    kind: voice ? 'voice' : 'text',
+    text: voice ? null : [it.title, it.details?.replace(/।$/, ''), it.due_text].filter(Boolean).join('। '),
+    transcript: voice?.transcript ?? null,
+    transcript_words: voice?.transcript_words ?? null,
+    forwarded_by_tg_id: FORWARDED.has(it.id) ? ME : null,
+    forwarded_by_name: FORWARDED.has(it.id) ? ME_NAME : null,
+    files: mine,
+    links: links.filter((l) => l.item_id === it.id),
+  };
+}
+
+const chat = (id: string, by: number, hours: number, text: string): TimelineMessage => ({
+  id, chat_id: -1001234567890, tg_message_id: 4000, sender_tg_id: by, sender_name: nameOf(by), sent_at: ago(hours), edited_at: null, kind: 'text', text,
+  transcript: null, transcript_words: null, forwarded_by_tg_id: null, forwarded_by_name: null, files: [], items: [],
+});
+const SMALL_TALK: TimelineMessage[] = [
+  chat('c1', ME, 1.4, 'জি স্যার, আজ রাতেই পাঠিয়ে দিচ্ছি।'),
+  chat('c2', ME, 8.8, 'ঠিক আছে স্যার, এখনই ফোন করছি।'),
+  chat('c3', BOSS, 19.5, 'রিপোর্টটা দেখে ভালো লাগল, ধন্যবাদ।'),
+  chat('c4', OTHER, 29, 'আমি কাল ছুটিতে থাকব, কিছু লাগলে রাফিকে বলবেন।'),
+];
+
 export const demoApi = {
-  fetchItems: () => delay(items.filter((i) => !i.dismissed)),
+  fetchItems: () => delay(items.filter((i) => !i.dismissed).map(withSteps)),
   fetchItem: (id: string) => delay(items.find((i) => i.id === id) ?? null),
+  fetchSubtasks: (itemId: string) => delay(subtasks.filter((x) => x.item_id === itemId).sort((a, b) => a.position - b.position)),
+  addSubtask: (itemId: string, title: string, position: number) => {
+    const row = step(`s-${Date.now()}`, itemId, position, title);
+    subtasks = [...subtasks, row];
+    return delay(row);
+  },
+  updateSubtask: (id: string, patch: Partial<Subtask>) => {
+    subtasks = subtasks.map((x) => (x.id === id ? { ...x, ...patch } : x));
+    return delay(true);
+  },
+  deleteSubtask: (id: string) => {
+    subtasks = subtasks.filter((x) => x.id !== id);
+    return delay(true);
+  },
+  fetchTimeline: () => {
+    const fromItems: TimelineMessage[] = items
+      .filter((i) => !i.dismissed)
+      .map((i) => {
+        const { links: _links, ...m } = messageOf(i);
+        return { ...m, items: [{ id: i.id, title: i.title, type: i.type }] };
+      });
+    return delay([...fromItems, ...SMALL_TALK].sort((a, b) => b.sent_at.localeCompare(a.sent_at)));
+  },
   updateItem: (id: string, patch: Partial<Item>) => {
-    items = items.map((i) => (i.id === id ? { ...i, ...patch, updated_at: new Date().toISOString() } : i));
+    items = items.map((i) => {
+      if (i.id !== id) return i;
+      // What the database trigger does on the real backend.
+      const auto = patch.status === undefined ? {} : { waiting_since: patch.status === 'waiting' ? (i.waiting_since ?? new Date().toISOString()) : null, completed_at: patch.status === 'done' ? (i.completed_at ?? new Date().toISOString()) : null };
+      return { ...i, ...auto, ...patch, updated_at: new Date().toISOString() };
+    });
     return delay(true);
   },
   fetchItemExtras: (id: string) => {
     const it = items.find((i) => i.id === id);
-    const mine = files.filter((f) => f.item_id === id);
-    const myLinks = links.filter((l) => l.item_id === id);
-    const voice = mine.find((f) => f.kind === 'voice');
-    const messages: Message[] = it
-      ? [
-          {
-            id: `m-${id}`,
-            chat_id: -1001234567890,
-            tg_message_id: 4812,
-            sender_tg_id: it.source_sender_tg_id,
-            sender_name: it.source_sender_name,
-            sent_at: it.created_at,
-            edited_at: null,
-            kind: voice ? 'voice' : 'text',
-            text: voice ? null : [it.title, it.details?.replace(/।$/, ''), it.due_text].filter(Boolean).join('। '),
-            transcript: voice?.transcript ?? null,
-            files: mine,
-            links: myLinks,
-          },
-        ]
-      : [];
+    const messages: Message[] = it ? [messageOf(it)] : [];
     const events: ItemEvent[] = it
       ? [
           ...(it.status !== 'todo' ? [{ id: `e2-${id}`, item_id: id, actor: 'user' as const, summary: `You changed: Status`, created_at: ago(3) }] : []),
-          ...(it.due_text ? [{ id: `e1-${id}`, item_id: id, actor: 'ai' as const, summary: 'বসের নতুন মেসেজ অনুযায়ী ডেডলাইন আপডেট হয়েছে', created_at: ago(5) }] : []),
-          { id: `e0-${id}`, item_id: id, actor: 'ai' as const, summary: 'মেসেজ থেকে তৈরি হয়েছে', created_at: it.created_at },
+          ...(it.due_text ? [{ id: `e1-${id}`, item_id: id, actor: 'ai' as const, summary: 'Deadline updated from a new message', created_at: ago(5) }] : []),
+          { id: `e0-${id}`, item_id: id, actor: 'ai' as const, summary: 'Created from a message', created_at: it.created_at },
         ]
       : [];
     return delay({ messages, events });

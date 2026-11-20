@@ -2,6 +2,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useState } from 'react';
 import { FlatList, RefreshControl, View } from 'react-native';
 import { DuePill, openItem } from '@/components/items';
+import { Appear } from '@/components/motion';
+import { bump } from '@/lib/haptics';
 import { Btn, Card, Empty, ErrorBanner, GlobalActions, Header, RoleBadge, Skeleton, Txt, styles } from '@/components/ui';
 import { useData } from '@/lib/data';
 import { fmtDateTime, plural } from '@/lib/format';
@@ -33,9 +35,10 @@ export default function Inbox() {
           />
         }
         ListHeaderComponent={<ErrorBanner text={error} />}
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const confidence = item.confidence != null ? Math.round(item.confidence * 100) : null;
           return (
+            <Appear index={index}>
             <Card onPress={() => openItem(item.id)} style={{ gap: space.md }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
                 <View style={{ flex: 1 }}>
@@ -71,6 +74,7 @@ export default function Inbox() {
                 <Btn small kind="danger" icon="close" label="Dismiss" style={{ flex: 1 }} onPress={() => updateItem(item.id, { dismissed: true }, 'Dismissed')} />
               </View>
             </Card>
+            </Appear>
           );
         }}
         ListEmptyComponent={loading ? <Skeleton height={180} rows={2} /> : <Empty icon="shield-checkmark-outline" title="All reviewed" text="Anything the AI is not sure about will wait here for you to confirm." />}

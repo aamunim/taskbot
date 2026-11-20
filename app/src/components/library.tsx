@@ -5,11 +5,13 @@ import { useState } from 'react';
 import { Alert, Image, Pressable, Text, View } from 'react-native';
 import { signedUrl } from '@/lib/api';
 import { useData } from '@/lib/data';
-import { fileExt, fileGroup, fileStatusText, fileTitle, fmtDate, fmtSize, splitUrl } from '@/lib/format';
+import { fileExt, fileGroup, fileStatusText, fileTitle, fmtDate, fmtDateTime, fmtSize, splitUrl } from '@/lib/format';
+import { tap } from '@/lib/haptics';
 import { roleColors } from '@/lib/roles';
 import { radius, space, ui, useTheme } from '@/lib/theme';
-import type { FileRow, LibFile, LibLink } from '@/lib/types';
+import type { FileRow, LibFile, LibLink, LinkRow as LinkRecord, Role } from '@/lib/types';
 import { AudioPlayer } from './AudioPlayer';
+import { openGallery } from './Gallery';
 import { openItem } from './items';
 import { Card, RoleBadge, Txt, styles } from './ui';
 
@@ -55,7 +57,10 @@ export function StarButton({ starred, onPress, onImage }: { starred: boolean; on
   const t = useTheme();
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        tap();
+        onPress();
+      }}
       hitSlop={10}
       accessibilityRole="button"
       accessibilityLabel={starred ? 'Remove star' : 'Add star'}
@@ -75,14 +80,15 @@ function ItemLink({ id }: { id: string | null }) {
   );
 }
 
-type FileProps = { file: LibFile; thumb?: string; onStar: () => void };
+/** `onOpen` replaces the default action (photos open the in-app gallery). */
+type FileProps = { file: LibFile; thumb?: string; onStar: () => void; onOpen?: () => void };
 
-export function PhotoTile({ file, thumb, onStar, size }: FileProps & { size: number }) {
+export function PhotoTile({ file, thumb, onStar, onOpen, size }: FileProps & { size: number }) {
   const t = useTheme();
   const { role } = useData();
   return (
     <Pressable
-      onPress={() => openFile(file)}
+      onPress={onOpen ?? (() => openFile(file))}
       onLongPress={file.item_id ? () => openItem(file.item_id!) : undefined}
       accessibilityLabel={fileTitle(file)}
       style={({ pressed }) => [{ width: size, height: size, borderRadius: radius.md, overflow: 'hidden', backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }, pressed && styles.pressed]}>
@@ -100,12 +106,12 @@ export function PhotoTile({ file, thumb, onStar, size }: FileProps & { size: num
 }
 
 /** List row for a photo or document. */
-export function FileListRow({ file, thumb, onStar }: FileProps) {
+export function FileListRow({ file, thumb, onStar, onOpen }: FileProps) {
   const t = useTheme();
   const { role } = useData();
   const problem = fileStatusText(file);
   return (
-    <Card onPress={file.status === 'stored' ? () => openFile(file) : undefined} style={{ padding: space.md }}>
+    <Card onPress={file.status === 'stored' ? (onOpen ?? (() => openFile(file))) : undefined} style={{ padding: space.md }}>
       <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
         {thumb ? <Image source={{ uri: thumb }} style={{ width: 48, height: 48, borderRadius: radius.sm }} /> : <ExtBadge file={file} size={48} />}
         <View style={{ flex: 1, gap: 3 }}>
@@ -156,15 +162,10 @@ export function VoiceCard({ file, onStar }: FileProps) {
         <StarButton starred={file.starred} onPress={onStar} />
       </View>
       {file.status === 'stored' && file.storage_path ? (
-        <AudioPlayer lazy storagePath={file.storage_path} duration={file.duration_seconds} />
+        <AudioPlayer lazy clamp storagePath={file.storage_path} duration={file.duration_seconds} words={file.transcript_words} transcript={file.transcript} />
       ) : (
         <Txt variant="label" color={t.danger}>{problem ?? 'Unavailable'}</Txt>
       )}
-      {file.transcript ? (
-        <View style={{ borderLeftWidth: 3, borderLeftColor: t.border, paddingLeft: space.md }}>
-          <Txt variant="label" content sub numberOfLines={3}>{file.transcript}</Txt>
-        </View>
-      ) : null}
     </Card>
   );
 }
@@ -175,6 +176,29 @@ function DomainTile({ host, size = 44 }: { host: string; size?: number }) {
       <Text style={{ color: '#FFFFFF', fontFamily: ui.extrabold, fontSize: size * 0.42 }}>{host.charAt(0).toUpperCase()}</Text>
     </View>
   );
+}
+
+type Previewed = Pick<LinkRecord, 'url' | 'domain' | 'favicon_url' | 'image_url'>;
+
+/** The site's own icon when the bot found one and it loads; otherwise the letter tile. */
+export function SiteIcon({ link, size = 44 }: { link: Previewed; size?: number }) {
+  const t = useTheme();
+  const [failed, setFailed] = useState(false);
+  const { host } = splitUrl(link.url, link.domain);
+  if (!link.favicon_url || failed) return <DomainTile host={host} size={size} />;
+  return (
+    <View style={{ width: size, height: size, borderRadius: Math.round(size * 0.28), backgroundColor: '#FFFFFF', borderWidth: 1, borderColor: t.border, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+      <Image source={{ uri: link.favicon_url }} style={{ width: size * 0.62, height: size * 0.62 }} resizeMode="contain" onError={() => setFailed(true)} />
+    </View>
+  );
+}
+
+/** The page's preview picture, or nothing at all if there is none or it fails to load. */
+function PreviewImage({ link, height }: { link: Previewed; height: number }) {
+  const t = useTheme();
+  const [failed, setFailed] = useState(false);
+  if (!link.image_url || failed) return null;
+  return <Image source={{ uri: link.image_url }} style={{ width: '100%', height, backgroundColor: t.surfaceAlt }} resizeMode="cover" onError={() => setFailed(true)} accessibilityIgnoresInvertColors />;
 }
 
 type LinkProps = { link: LibLink; onStar: () => void };
@@ -189,11 +213,15 @@ function useCopy(url: string) {
   return { copied, copy };
 }
 
-/** What the link is: the sender's own words around it, else the path, else the site. */
+/** What the sender wrote around the link, without the link itself. */
+export function linkSaid(link: Pick<LibLink, 'text' | 'url'>): string {
+  return link.text?.replace(link.url, '').replace(/\s+/g, ' ').trim() ?? '';
+}
+
+/** What the link is: the page's own title, else the sender's words, else the address. */
 export function linkLabel(link: LibLink): string {
   const { host, rest } = splitUrl(link.url, link.domain);
-  const said = link.text?.replace(link.url, '').replace(/\s+/g, ' ').trim();
-  return said || (rest ? host + rest : host);
+  return link.title?.trim() || linkSaid(link) || (rest ? host + rest : host);
 }
 
 /**
@@ -219,7 +247,7 @@ export function LinkRow({ link, onStar, showHost = true, last }: LinkProps & { s
         !last && { borderBottomWidth: 1, borderBottomColor: t.border },
         pressed && { backgroundColor: t.surfaceAlt },
       ]}>
-      <DomainTile host={host} size={36} />
+      <SiteIcon link={link} size={36} />
       <View style={{ flex: 1 }}>
         <Txt variant="body" content strong numberOfLines={1}>{linkLabel(link)}</Txt>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -240,28 +268,37 @@ export function LinkCard({ link, onStar }: LinkProps) {
   const { role } = useData();
   const { host, rest } = splitUrl(link.url, link.domain);
   const { copied, copy } = useCopy(link.url);
+  const said = linkSaid(link);
   return (
-    <Card onPress={() => Linking.openURL(link.url)} style={{ gap: space.md }}>
-      <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
-        <DomainTile host={host} />
-        <View style={{ flex: 1 }}>
-          <Txt variant="body" strong numberOfLines={1}>{host}</Txt>
-          {rest ? <Txt variant="caption" sub numberOfLines={1}>{rest}</Txt> : null}
+    <Card onPress={() => Linking.openURL(link.url)} style={{ padding: 0, overflow: 'hidden' }}>
+      <PreviewImage link={link} height={132} />
+      <View style={{ padding: space.lg, gap: space.md }}>
+        <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'center' }}>
+          <SiteIcon link={link} />
+          <View style={{ flex: 1 }}>
+            <Txt variant="body" content strong numberOfLines={2}>{link.title?.trim() || host}</Txt>
+            <Txt variant="caption" sub numberOfLines={1}>{link.title ? host : rest || host}</Txt>
+          </View>
+          <StarButton starred={link.starred} onPress={onStar} />
         </View>
-        <StarButton starred={link.starred} onPress={onStar} />
-      </View>
-      {link.text ? <Txt variant="label" content sub numberOfLines={2}>{link.text.replace(link.url, '').trim() || link.text}</Txt> : null}
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
-          <RoleBadge role={role(link.sender_tg_id)} name={link.sender_name} />
-          <Txt variant="caption" sub>· {fmtDate(link.sent_at)}</Txt>
+        {link.description ? <Txt variant="label" sub numberOfLines={2}>{link.description}</Txt> : null}
+        {said ? (
+          <View style={{ borderLeftWidth: 3, borderLeftColor: t.border, paddingLeft: space.md }}>
+            <Txt variant="label" content sub numberOfLines={2}>{said}</Txt>
+          </View>
+        ) : null}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
+          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <RoleBadge role={role(link.sender_tg_id)} name={link.sender_name} />
+            <Txt variant="caption" sub>· {fmtDate(link.sent_at)}</Txt>
+          </View>
+          <ItemLink id={link.item_id} />
+          <Pressable onPress={copy} hitSlop={10} accessibilityRole="button" accessibilityLabel="Copy link" style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 4 }, pressed && styles.pressed]}>
+            <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={17} color={copied ? t.success : t.sub} />
+            <Txt variant="caption" color={copied ? t.success : t.sub} strong>{copied ? 'Copied' : 'Copy'}</Txt>
+          </Pressable>
+          <Ionicons name="open-outline" size={18} color={t.primary} />
         </View>
-        <ItemLink id={link.item_id} />
-        <Pressable onPress={copy} hitSlop={10} accessibilityRole="button" accessibilityLabel="Copy link" style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: 4 }, pressed && styles.pressed]}>
-          <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={17} color={copied ? t.success : t.sub} />
-          <Txt variant="caption" color={copied ? t.success : t.sub} strong>{copied ? 'Copied' : 'Copy'}</Txt>
-        </Pressable>
-        <Ionicons name="open-outline" size={18} color={t.primary} />
       </View>
     </Card>
   );
@@ -269,29 +306,58 @@ export function LinkCard({ link, onStar }: LinkProps) {
 
 export function LinkTile({ link, onStar, width }: LinkProps & { width: number }) {
   const { role } = useData();
-  const { host, rest } = splitUrl(link.url, link.domain);
+  const { host } = splitUrl(link.url, link.domain);
   return (
-    <Card onPress={() => Linking.openURL(link.url)} style={{ width, padding: space.md, gap: space.sm }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
-        <View style={{ flex: 1 }}><DomainTile host={host} size={46} /></View>
-        <StarButton starred={link.starred} onPress={onStar} />
-      </View>
-      <Txt variant="body" strong numberOfLines={1}>{host}</Txt>
-      <Txt variant="label" content sub numberOfLines={2} style={{ minHeight: 42 }}>{link.text?.replace(link.url, '').trim() || rest || link.url}</Txt>
-      <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-        <View style={{ flex: 1 }}><RoleBadge role={role(link.sender_tg_id)} compact /></View>
-        <ItemLink id={link.item_id} />
+    <Card onPress={() => Linking.openURL(link.url)} style={{ width, padding: 0, overflow: 'hidden' }}>
+      <PreviewImage link={link} height={84} />
+      <View style={{ padding: space.md, gap: space.sm }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+          <View style={{ flex: 1 }}><SiteIcon link={link} size={link.image_url ? 30 : 46} /></View>
+          <StarButton starred={link.starred} onPress={onStar} />
+        </View>
+        <Txt variant="body" content strong numberOfLines={2}>{linkLabel(link)}</Txt>
+        <Txt variant="caption" sub numberOfLines={1}>{host}</Txt>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <View style={{ flex: 1 }}><RoleBadge role={role(link.sender_tg_id)} compact /></View>
+          <ItemLink id={link.item_id} />
+        </View>
       </View>
     </Card>
   );
 }
 
-/** A file attached to a message, shown inline on the item screen. */
-export function AttachmentRow({ file }: { file: FileRow }) {
+/** A link inside a message card: icon, title, site. */
+export function LinkChip({ link }: { link: LinkRecord }) {
+  const t = useTheme();
+  const { host, rest } = splitUrl(link.url, link.domain);
+  return (
+    <Pressable
+      onPress={() => Linking.openURL(link.url)}
+      accessibilityRole="link"
+      style={({ pressed }) => [{ flexDirection: 'row', alignItems: 'center', gap: space.md, backgroundColor: t.surface, borderRadius: radius.md, padding: space.sm }, pressed && styles.pressed]}>
+      <SiteIcon link={link} size={38} />
+      <View style={{ flex: 1 }}>
+        <Txt variant="label" content numberOfLines={1}>{link.title?.trim() || `${host}${rest}`}</Txt>
+        <Txt variant="caption" sub numberOfLines={1}>{host}</Txt>
+      </View>
+      <Ionicons name="open-outline" size={16} color={t.primary} />
+    </Pressable>
+  );
+}
+
+/** Opens a stored photo in the in-app viewer; anything else in the phone's own viewer. */
+export async function openAttachment(file: FileRow, meta: { sender: string | null; role: Role; sentAt: string }) {
+  if (fileGroup(file) !== 'photo' || file.status !== 'stored' || !file.storage_path) return openFile(file);
+  const uri = await signedUrl(file.storage_path);
+  if (!uri) return Alert.alert('Could not open photo', 'Please try again in a moment.');
+  openGallery([{ key: file.id, uri, title: fileTitle(file), sender: meta.sender, role: meta.role, date: fmtDateTime(meta.sentAt) }]);
+}
+
+export function AttachmentRow({ file, onOpen }: { file: FileRow; onOpen?: () => void }) {
   const t = useTheme();
   const problem = fileStatusText(file);
   return (
-    <Pressable onPress={() => openFile(file)} disabled={file.status !== 'stored'} style={({ pressed }) => [{ flexDirection: 'row', gap: space.md, alignItems: 'center', padding: space.sm, borderRadius: radius.md, backgroundColor: t.surface }, pressed && styles.pressed]}>
+    <Pressable onPress={onOpen ?? (() => openFile(file))} disabled={file.status !== 'stored'} style={({ pressed }) => [{ flexDirection: 'row', gap: space.md, alignItems: 'center', padding: space.sm, borderRadius: radius.md, backgroundColor: t.surface }, pressed && styles.pressed]}>
       <ExtBadge file={file} size={38} />
       <View style={{ flex: 1 }}>
         <Txt variant="label" content numberOfLines={1}>{fileTitle(file)}</Txt>

@@ -62,7 +62,8 @@ export function dueLabel(item: Pick<Item, 'due_at' | 'due_all_day'>): string | n
 }
 
 export function isOverdue(item: Pick<Item, 'due_at' | 'due_all_day' | 'status'>): boolean {
-  if (!item.due_at || item.status === 'done') return false;
+  // Done is done, and a task waiting on the boss is no longer the owner's to be late with.
+  if (!item.due_at || item.status === 'done' || item.status === 'waiting') return false;
   if (item.due_all_day) return dayNumber(item.due_at) < todayNumber();
   return new Date(item.due_at).getTime() < Date.now();
 }
@@ -81,7 +82,35 @@ export function fromPickerDate(d: Date): string {
   return new Date(utc - DHAKA_OFFSET_MS).toISOString();
 }
 
-export const STATUS_LABEL: Record<Status, string> = { todo: 'To do', doing: 'In progress', done: 'Done' };
+export const STATUS_LABEL: Record<Status, string> = { todo: 'To do', doing: 'In progress', waiting: 'Waiting on boss', done: 'Done' };
+/** Short forms for the four-way segmented control. */
+export const STATUS_SHORT: Record<Status, string> = { todo: 'To do', doing: 'Doing', waiting: 'Waiting', done: 'Done' };
+export const STATUSES: Status[] = ['todo', 'doing', 'waiting', 'done'];
+
+/** "waiting 3 days", "waiting since this morning". */
+export function waitingLabel(since: string | null): string {
+  if (!since) return 'waiting';
+  const days = todayNumber() - dayNumber(since);
+  if (days <= 0) return 'waiting since today';
+  return `waiting ${days} ${days === 1 ? 'day' : 'days'}`;
+}
+
+export const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+export const WEEKDAY_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Year, month (0-11), day and weekday (0 = Sunday) of a Dhaka day number. */
+export function dayParts(day: number): { year: number; month: number; date: number; weekday: number } {
+  const d = new Date(day * DAY_MS);
+  return { year: d.getUTCFullYear(), month: d.getUTCMonth(), date: d.getUTCDate(), weekday: d.getUTCDay() };
+}
+/** Dhaka day number of a calendar date. */
+export const dayOf = (year: number, month: number, date: number) => Math.floor(Date.UTC(year, month, date) / DAY_MS);
+
+/** "Friday, 20 November" for a day number. */
+export function fmtDayLong(day: number): string {
+  const p = dayParts(day);
+  return `${WEEKDAYS[p.weekday]}, ${p.date} ${MONTH_NAMES[p.month]}`;
+}
 export const PRIORITY_LABEL: Record<Priority, string> = { low: 'Low', normal: 'Normal', high: 'High', urgent: 'Urgent' };
 export const PRIORITY_RANK: Record<Priority, number> = { urgent: 0, high: 1, normal: 2, low: 3 };
 

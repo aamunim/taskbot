@@ -1,6 +1,8 @@
+import { router } from 'expo-router';
 import { useMemo, useState } from 'react';
 import { RefreshControl, ScrollView, View } from 'react-native';
 import { NoteCard, noteColumns } from '@/components/items';
+import { Appear } from '@/components/motion';
 import { Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionGroup, RoleFilterBar, SectionHeader, Sheet, Skeleton, styles } from '@/components/ui';
 import { useData } from '@/lib/data';
 import { dayHeading } from '@/lib/format';
@@ -57,6 +59,7 @@ export default function Notes() {
         title="Notes"
         actions={
           <View style={{ flexDirection: 'row', gap: space.sm }}>
+            <IconBtn icon="folder-open-outline" label="Projects" onPress={() => router.push('/projects')} bg={t.surface} />
             <IconBtn icon="options-outline" label="Arrange notes" onPress={() => setOptions(true)} bg={t.surface} />
             <GlobalActions />
           </View>
@@ -90,12 +93,12 @@ export default function Notes() {
             <View key={title}>
               <SectionHeader title={title} count={list.length} />
               {mode === 'compact' ? (
-                <View style={{ gap: space.sm }}>{list.map((n) => <NoteCard key={n.id} item={n} compact onPin={() => togglePin(n)} />)}</View>
+                <View style={{ gap: space.sm }}>{list.map((n, k) => <Appear key={n.id} index={k}><NoteCard item={n} compact onPin={() => togglePin(n)} /></Appear>)}</View>
               ) : (
                 <View style={{ flexDirection: 'row', gap: space.md, alignItems: 'flex-start' }}>
                   {noteColumns(list).map((col, i) => (
                     <View key={i} style={{ flex: 1, gap: space.md }}>
-                      {col.map((n) => <NoteCard key={n.id} item={n} onPin={() => togglePin(n)} />)}
+                      {col.map((n, k) => <Appear key={n.id} index={k * 2 + i}><NoteCard item={n} onPin={() => togglePin(n)} /></Appear>)}
                     </View>
                   ))}
                 </View>

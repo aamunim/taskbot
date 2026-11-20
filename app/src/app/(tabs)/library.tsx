@@ -2,11 +2,13 @@ import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Pressable, RefreshControl, ScrollView, TextInput, View, useWindowDimensions } from 'react-native';
+import { openGallery, type GalleryImage } from '@/components/Gallery';
+import { Appear } from '@/components/motion';
 import { DocTile, FileListRow, LinkCard, LinkRow, LinkTile, PhotoTile, VoiceCard, linkLabel } from '@/components/library';
 import { Card, Chip, Empty, ErrorBanner, GlobalActions, Header, IconBtn, OptionGroup, RoleFilterBar, SectionHeader, Sheet, Skeleton, styles, type IconName } from '@/components/ui';
 import * as api from '@/lib/api';
 import { useData } from '@/lib/data';
-import { dayHeading, fileExt, fileGroup, fileTitle, splitUrl } from '@/lib/format';
+import { dayHeading, fileExt, fileGroup, fileTitle, fmtDateTime, splitUrl } from '@/lib/format';
 import { usePref } from '@/lib/prefs';
 import { ROLE_LABEL, matchesRole } from '@/lib/roles';
 import { content, noOutline, radius, space, useTheme } from '@/lib/theme';
@@ -98,7 +100,7 @@ export default function Library() {
   const visibleLinks = useMemo(() => {
     const q = linkQuery.trim().toLowerCase();
     if (!q) return roleLinks;
-    return roleLinks.filter((l) => `${l.url} ${l.text ?? ''} ${l.sender_name ?? ''}`.toLowerCase().includes(q));
+    return roleLinks.filter((l) => `${l.url} ${l.title ?? ''} ${l.text ?? ''} ${l.sender_name ?? ''}`.toLowerCase().includes(q));
   }, [roleLinks, linkQuery]);
   const counts: Record<Section, number> = useMemo(
     () => ({
@@ -147,6 +149,13 @@ export default function Library() {
   const grid = isLinks ? linkView === 'grid' : mode === 'grid' && section !== 'voice';
   const compactLinks = isLinks && linkView === 'compact';
 
+  // Photos open in the in-app viewer, which swipes through the photos in the order shown here.
+  const shownPhotos = section === 'photo' ? groups.flatMap(([, list]) => list).flatMap((e) => (e.file?.storage_path && thumbs[e.file.storage_path] ? [e.file] : [])) : [];
+  const openPhoto = (f: LibFile) => {
+    const images: GalleryImage[] = shownPhotos.map((p) => ({ key: p.id, uri: thumbs[p.storage_path!], title: fileTitle(p), sender: p.sender_name, role: role(p.sender_tg_id), date: fmtDateTime(p.sent_at) }));
+    openGallery(images, Math.max(0, shownPhotos.findIndex((p) => p.id === f.id)));
+  };
+
   const renderEntry = (e: Entry) => {
     if (e.link) {
       const onStar = () => star('links', e.link.id, !e.link.starred);
@@ -156,8 +165,9 @@ export default function Library() {
     const onStar = () => star('files', f.id, !f.starred);
     const thumb = f.storage_path ? thumbs[f.storage_path] : undefined;
     if (section === 'voice') return <VoiceCard key={e.key} file={f} onStar={onStar} />;
-    if (!grid) return <FileListRow key={e.key} file={f} thumb={section === 'photo' ? thumb : undefined} onStar={onStar} />;
-    return section === 'photo' ? <PhotoTile key={e.key} file={f} thumb={thumb} onStar={onStar} size={photoSize} /> : <DocTile key={e.key} file={f} onStar={onStar} width={tileWidth} />;
+    const onOpen = section === 'photo' && thumb ? () => openPhoto(f) : undefined;
+    if (!grid) return <FileListRow key={e.key} file={f} thumb={section === 'photo' ? thumb : undefined} onStar={onStar} onOpen={onOpen} />;
+    return section === 'photo' ? <PhotoTile key={e.key} file={f} thumb={thumb} onStar={onStar} onOpen={onOpen} size={photoSize} /> : <DocTile key={e.key} file={f} onStar={onStar} width={tileWidth} />;
   };
 
   return (
@@ -200,7 +210,7 @@ export default function Library() {
               autoCorrect={false}
               returnKeyType="search"
               accessibilityLabel="Find a link"
-              style={[{ flex: 1, color: t.text, fontFamily: content.regular, fontSize: 16, paddingVertical: 10 }, noOutline]}
+              style={[{ flex: 1, color: t.text, fontFamily: content.regular, fontSize: 16 * t.scale, paddingVertical: 10 }, noOutline]}
             />
             {linkQuery ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setLinkQuery('')} accessibilityLabel="Clear" /> : null}
           </View>
@@ -215,10 +225,10 @@ export default function Library() {
               <Empty icon={EMPTY[section].icon} title={EMPTY[section].title} text="Files and links shared in the group are collected here automatically." />
             )
           ) : null}
-          {groups.map(([title, list]) => {
+          {groups.map(([title, list], gi) => {
             const closed = isLinks && !!title && !!collapsed[title];
             return (
-              <View key={title || 'all'}>
+              <Appear key={`${section}:${title || 'all'}`} index={gi}>
                 {title && isLinks ? (
                   <Pressable
                     onPress={() => setCollapsed((c) => ({ ...c, [title]: !c[title] }))}
@@ -243,7 +253,7 @@ export default function Library() {
                     {list.map(renderEntry)}
                   </View>
                 )}
-              </View>
+              </Appear>
             );
           })}
         </View>
