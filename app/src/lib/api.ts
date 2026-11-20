@@ -17,7 +17,7 @@ const MESSAGE_COLUMNS =
   'id,chat_id,tg_message_id,sender_tg_id,sender_name,sent_at,edited_at,kind,text,transcript,transcript_words,forwarded_by_tg_id,forwarded_by_name';
 const CONFIG_COLUMNS =
   'owner_tg_id,boss_tg_id,boss_name,timezone,morning_time,remind_before_minutes,digest_enabled,' +
-  'notify_new_items,notify_boss_done,notify_boss_waiting,boss_done_message,boss_waiting_message,clarify_enabled,followup_mode,followup_days,followup_message,' +
+  'notify_new_items,notify_boss_done,notify_boss_waiting,boss_done_message,boss_waiting_message,clarify_enabled,read_silent_photos,followup_mode,followup_days,followup_message,' +
   'weekly_report_enabled,weekly_report_day,weekly_report_time,last_webhook_at,last_processed_at,last_error,last_error_at';
 
 type Derived = 'has_files' | 'steps_total' | 'steps_done';

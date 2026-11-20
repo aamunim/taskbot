@@ -233,6 +233,9 @@ export default function SettingsScreen() {
           <Row label="Ask about unclear instructions" hint="Suggests a question for your boss when a task cannot be started as written">
             <Toggle label="Ask about unclear instructions" value={cfg.clarify_enabled} onChange={(v) => void saveConfig({ clarify_enabled: v })} />
           </Row>
+          <Row label="Read photos sent without a message" hint="Off: a bare photo or screenshot is only saved to the library. On: the AI also looks for tasks in it.">
+            <Toggle label="Read photos sent without a message" value={cfg.read_silent_photos} onChange={(v) => void saveConfig({ read_silent_photos: v })} />
+          </Row>
           <View style={{ gap: space.sm }}>
             <Txt variant="body" strong>Follow up when your boss has not replied</Txt>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>

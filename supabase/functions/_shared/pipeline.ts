@@ -25,6 +25,7 @@ interface MessageRow {
   text: string | null;
   transcript: string | null;
   reply_to_tg_message_id: number | null;
+  raw: { media_group_id?: unknown } | null;
   forwarded_by_tg_id: number | null;
   forwarded_by_name: string | null;
   attempts: number;
@@ -118,9 +119,9 @@ export async function processChat(chatId: number): Promise<number> {
   return batch.length;
 }
 
-async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
+async function runBatch(chatId: number, claimed: MessageRow[]): Promise<void> {
   const supabase = db();
-  const ids = batch.map((m) => m.id);
+  const ids = claimed.map((m) => m.id);
 
   // 1. Files: copy to Storage, transcribe audio, collect images for the model.
   const { data: fileRows, error: fileErr } = await supabase.from("files").select("*").in("message_id", ids);
@@ -129,9 +130,30 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
   const filesByMessage = new Map<string, FileRow[]>();
   for (const f of (fileRows ?? []) as FileRow[]) {
     filesByMessage.set(f.message_id, [...(filesByMessage.get(f.message_id) ?? []), f]);
-    const message = batch.find((m) => m.id === f.message_id)!;
-    await handleFile(message, f, images);
   }
+
+  // A photo sent with no words (a screenshot passed along through the group) is only
+  // filed in the library: no analysis, no task, no note. A caption anywhere in the
+  // same album, or the photo being a reply to something, makes it part of the conversation.
+  const { data: early } = await supabase.from("app_config").select("read_silent_photos").eq("id", 1).single();
+  const isImageFile = (f: FileRow) => f.kind === "photo" || IMAGE_MEDIA_TYPES.includes(f.mime_type ?? "");
+  const albumOf = (m: MessageRow) => (typeof m.raw?.media_group_id === "string" ? m.raw.media_group_id : null);
+  const captionedAlbums = new Set(claimed.filter((m) => m.text?.trim()).map(albumOf).filter((a): a is string => a !== null));
+  const silent = new Set(
+    early?.read_silent_photos ? [] : claimed.filter((m) => {
+      const files = filesByMessage.get(m.id) ?? [];
+      const album = albumOf(m);
+      return files.length > 0 && files.every(isImageFile) && !m.text?.trim() &&
+        m.reply_to_tg_message_id === null && !(album && captionedAlbums.has(album));
+    }).map((m) => m.id),
+  );
+
+  for (const f of (fileRows ?? []) as FileRow[]) {
+    const message = claimed.find((m) => m.id === f.message_id)!;
+    await handleFile(message, f, images, !silent.has(message.id));
+  }
+  const batch = claimed.filter((m) => !silent.has(m.id));
+  if (!batch.length) return;
 
   // 2. Context for the model.
   const { data: cfg } = await supabase.from("app_config").select("*").eq("id", 1).single();
@@ -322,12 +344,12 @@ function pickChanges(op: Operation): Record<string, unknown> {
   return c;
 }
 
-async function handleFile(message: MessageRow, f: FileRow, images: Map<string, Image[]>): Promise<void> {
+async function handleFile(message: MessageRow, f: FileRow, images: Map<string, Image[]>, forModel: boolean): Promise<void> {
   const supabase = db();
   const isImage = f.kind === "photo" || IMAGE_MEDIA_TYPES.includes(f.mime_type ?? "");
   const needsTranscript = TRANSCRIBE_KINDS.includes(f.kind) && !message.transcript;
   if (f.status === "too_large") return;
-  if (f.status === "stored" && !isImage && !needsTranscript) return;
+  if (f.status === "stored" && !(isImage && forModel) && !needsTranscript) return;
 
   if ((f.size_bytes ?? 0) > MAX_DOWNLOAD_BYTES) {
     await supabase.from("files").update({ status: "too_large" }).eq("id", f.id);
@@ -361,7 +383,7 @@ async function handleFile(message: MessageRow, f: FileRow, images: Map<string, I
   }
 
   const mediaType = f.kind === "photo" ? "image/jpeg" : f.mime_type ?? "";
-  if (isImage && IMAGE_MEDIA_TYPES.includes(mediaType) && bytes.length <= MAX_IMAGE_BYTES) {
+  if (forModel && isImage && IMAGE_MEDIA_TYPES.includes(mediaType) && bytes.length <= MAX_IMAGE_BYTES) {
     images.set(message.id, [...(images.get(message.id) ?? []), { mediaType, base64: toBase64(bytes) }]);
   }
 }
