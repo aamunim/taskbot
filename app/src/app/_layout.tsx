@@ -16,6 +16,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GalleryHost } from '@/components/Gallery';
 import { Intro } from '@/components/Intro';
 import { ShareHost } from '@/components/ShareSheet';
+import { UndoToastHost } from '@/components/UndoToast';
 import { DesktopStyles, DetailPane, Sidebar } from '@/components/desktop';
 import { MAX_APP_WIDTH, useLayout } from '@/lib/layout';
 import { UpdateGate } from '@/components/UpdateGate';
@@ -62,6 +63,7 @@ function Routes({ ready }: { ready: boolean }) {
       </Stack>
       <GalleryHost />
       <ShareHost />
+      <UndoToastHost />
     </View>
       {shell ? <DetailPane /> : null}
       {desktop ? <DesktopStyles /> : null}

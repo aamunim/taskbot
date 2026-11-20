@@ -4,7 +4,7 @@ import { pickDateTime } from '@/lib/pick';
 import Constants from 'expo-constants';
 import { useFocusEffect } from 'expo-router';
 import { useCallback, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, View } from 'react-native';
+import { Pressable, ScrollView, TextInput, View } from 'react-native';
 import { Avatar, Btn, Card, Chip, ErrorBanner, SectionHeader, Sheet, Skeleton, Toggle, TopBar, Txt, styles } from '@/components/ui';
 import * as api from '@/lib/api';
 import { Page } from '@/components/desktop';
@@ -15,7 +15,7 @@ import { fmtDateTime, plural } from '@/lib/format';
 import { useAuth } from '@/lib/auth';
 import { tap } from '@/lib/haptics';
 import { usePref } from '@/lib/prefs';
-import { ACCENTS, APPEARANCES, PREF_ACCENT, PREF_APPEARANCE, PREF_TEXT_SIZE, TEXT_SIZES, radius, space, useTheme, type Accent, type Appearance, type TextSize } from '@/lib/theme';
+import { ACCENTS, APPEARANCES, PREF_ACCENT, PREF_APPEARANCE, PREF_TEXT_SIZE, TEXT_SIZES, content, noOutline, radius, space, useTheme, type Accent, type Appearance, type TextSize } from '@/lib/theme';
 import { checkForUpdate, restartToUpdate, runningVersion, showUpdatePrompt, useUpdateState } from '@/lib/updates';
 import type { Sender } from '@/lib/types';
 
@@ -140,6 +140,19 @@ export default function SettingsScreen() {
           </View>
         </Card>
   );
+  const tellBoss = (
+        <Card style={{ gap: space.lg }}>
+          <Txt variant="caption" sub>When you finish a task your boss gave you, the bot can reply to their original message in the group. You get a few seconds to undo it first.</Txt>
+          <Row label="When I mark it done" hint="Only for tasks from your boss">
+            <Toggle label="Tell boss when done" value={cfg.notify_boss_done} onChange={(v) => void saveConfig({ notify_boss_done: v })} />
+          </Row>
+          {cfg.notify_boss_done ? <MessageField label="Done message" value={cfg.boss_done_message} fallback="✅ Done: {task}" onSave={(v) => void saveConfig({ boss_done_message: v })} /> : null}
+          <Row label="When I mark it sent" hint="Status “Waiting on boss”">
+            <Toggle label="Tell boss when sent" value={cfg.notify_boss_waiting} onChange={(v) => void saveConfig({ notify_boss_waiting: v })} />
+          </Row>
+          {cfg.notify_boss_waiting ? <MessageField label="Sent message" value={cfg.boss_waiting_message} fallback="📨 Sent for your review: {task}" onSave={(v) => void saveConfig({ boss_waiting_message: v })} /> : null}
+        </Card>
+  );
   const reminders = (
         <Card style={{ gap: space.lg }}>
           <Txt variant="caption" sub>Reminders arrive as private Telegram messages from the bot.</Txt>
@@ -242,6 +255,8 @@ export default function SettingsScreen() {
             <View style={col}>
               <SectionHeader title="People" />
               {people}
+              <SectionHeader title="Tell your boss" />
+              {tellBoss}
               <SectionHeader title="Reminders" />
               {reminders}
             </View>
@@ -275,6 +290,8 @@ export default function SettingsScreen() {
 
         <SectionHeader title="People" />
         {people}
+        <SectionHeader title="Tell your boss" />
+        {tellBoss}
         <SectionHeader title="Appearance" />
         {appearanceCard}
         <SectionHeader title="Reminders" />
@@ -288,6 +305,33 @@ export default function SettingsScreen() {
       </ScrollView>
 
       {bossPicker}
+    </View>
+  );
+}
+
+/** Editable message text; `{task}` is replaced by the task's title. Saved when the field loses focus. */
+function MessageField({ label, value, fallback, onSave }: { label: string; value: string; fallback: string; onSave: (v: string) => void }) {
+  const t = useTheme();
+  const [text, setText] = useState(value);
+  const commit = () => {
+    const next = text.trim() || fallback;
+    setText(next);
+    if (next !== value) onSave(next);
+  };
+  return (
+    <View style={{ gap: 6 }}>
+      <TextInput
+        value={text}
+        onChangeText={setText}
+        onBlur={commit}
+        onSubmitEditing={commit}
+        accessibilityLabel={label}
+        placeholder={fallback}
+        placeholderTextColor={t.faint}
+        maxLength={300}
+        style={[{ color: t.text, fontFamily: content.regular, fontSize: 16, paddingVertical: 10, paddingHorizontal: space.md, borderRadius: radius.md, borderWidth: 1, borderColor: t.border, backgroundColor: t.surfaceAlt }, noOutline]}
+      />
+      <Txt variant="caption" sub>Your boss will see: <Txt variant="caption" content>{(text.trim() || fallback).replace('{task}', 'Monthly sales report')}</Txt></Txt>
     </View>
   );
 }

@@ -134,6 +134,10 @@ export type AppConfig = {
   remind_before_minutes: number;
   digest_enabled: boolean;
   notify_new_items: boolean;
+  notify_boss_done: boolean;
+  notify_boss_waiting: boolean;
+  boss_done_message: string;
+  boss_waiting_message: string;
   last_webhook_at: string | null;
   last_processed_at: string | null;
   last_error: string | null;

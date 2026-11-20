@@ -1,6 +1,7 @@
 import { analyse, IMAGE_MEDIA_TYPES, type Operation } from "./claude.ts";
 import { transcribe } from "./elevenlabs.ts";
 import { fetchLinkMeta } from "./linkmeta.ts";
+import { flushBossNotices } from "./notices.ts";
 import { downloadFile, MAX_DOWNLOAD_BYTES, sendMessage } from "./telegram.ts";
 import { db, errorText, escapeHtml, localStamp, recordError } from "./util.ts";
 
@@ -70,6 +71,7 @@ export async function processAll(): Promise<{ chats: number; messages: number }>
   let messages = 0;
   const chats = (data ?? []) as number[];
   for (const chatId of chats) messages += await processChat(chatId);
+  await flushBossNotices().catch((e) => console.error("boss notices failed", e));
   await fillLinkPreviews().catch((e) => console.error("link previews failed", e));
   return { chats: chats.length, messages };
 }

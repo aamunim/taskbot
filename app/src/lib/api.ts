@@ -1,5 +1,5 @@
 import { DEMO, demoApi, demoSignedUrl } from './demo';
-import { supabase } from './supabase';
+import { SUPABASE_ANON_KEY, SUPABASE_URL, supabase } from './supabase';
 import type { AppConfig, FileRow, Item, ItemEvent, LibFile, LibLink, LinkRow, Message, SearchResult, Sender, Subtask, TimelineMessage, TranscriptWord } from './types';
 
 // Every read and write the screens need. Demo mode answers from sample data.
@@ -17,7 +17,7 @@ const MESSAGE_COLUMNS =
   'id,chat_id,tg_message_id,sender_tg_id,sender_name,sent_at,edited_at,kind,text,transcript,transcript_words,forwarded_by_tg_id,forwarded_by_name';
 const CONFIG_COLUMNS =
   'owner_tg_id,boss_tg_id,boss_name,timezone,morning_time,remind_before_minutes,digest_enabled,' +
-  'notify_new_items,last_webhook_at,last_processed_at,last_error,last_error_at';
+  'notify_new_items,notify_boss_done,notify_boss_waiting,boss_done_message,boss_waiting_message,last_webhook_at,last_processed_at,last_error,last_error_at';
 
 type Derived = 'has_files' | 'steps_total' | 'steps_done';
 type RawItem = Omit<Item, Derived> & {
@@ -261,4 +261,33 @@ export function subscribe(onChange: () => void): () => void {
   return () => {
     supabase.removeChannel(channel);
   };
+}
+
+// ---------------------------------------------------------------- telling the boss
+
+/** Queues a message to the boss about this task; it goes out after a short undo window. */
+export async function queueBossNotice(itemId: string, kind: 'done' | 'waiting'): Promise<boolean> {
+  if (DEMO) return true;
+  await supabase.from('boss_notices').delete().eq('item_id', itemId).eq('status', 'pending');
+  const { error } = await supabase.from('boss_notices').insert({ item_id: itemId, kind });
+  return !error;
+}
+
+/** Withdraws a queued message that has not been sent yet. */
+export async function cancelBossNotice(itemId: string): Promise<void> {
+  if (DEMO) return;
+  await supabase.from('boss_notices').delete().eq('item_id', itemId).eq('status', 'pending');
+}
+
+/** Asks the bot to send whatever is due now (the bot also checks by itself every minute). */
+export async function sendBossNotices(): Promise<void> {
+  if (DEMO) return;
+  const { data } = await supabase.auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) return;
+  await fetch(`${SUPABASE_URL}/functions/v1/notify`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${token}` },
+    body: '{}',
+  }).catch(() => {});
 }

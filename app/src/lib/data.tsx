@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { showUndoToast } from '@/components/UndoToast';
 import * as api from './api';
 import { useAuth } from './auth';
 import { roleOf } from './roles';
@@ -32,6 +33,9 @@ const DataContext = createContext<DataState>({
   saveConfig: async () => false,
   role: () => 'other',
 });
+
+/** The database queues a notice 8 seconds out; the toast expires just after so the send finds it due. */
+const BOSS_NOTICE_SECONDS = 9;
 
 export function DataProvider({ children }: { children: ReactNode }) {
   const { signedIn } = useAuth();
@@ -72,6 +76,36 @@ export function DataProvider({ children }: { children: ReactNode }) {
     };
   }, [signedIn, refresh]);
 
+  // Latest updateItem, so the toast's Undo can call it without a stale closure.
+  const updateRef = useRef<DataState['updateItem']>(async () => false);
+
+  /**
+   * After the owner marks a boss's task done (or sent), queue a message to the boss
+   * in the group. It leaves after a short window in which it can be undone.
+   */
+  const tellBoss = useCallback(
+    (was: Item, status: Item['status']) => {
+      const kind = status === 'done' ? 'done' : status === 'waiting' ? 'waiting' : null;
+      const enabled = kind === 'done' ? config?.notify_boss_done : kind === 'waiting' ? config?.notify_boss_waiting : false;
+      const fromBoss = was.type === 'task' && was.source_sender_tg_id != null && was.source_sender_tg_id !== config?.owner_tg_id;
+      if (!kind || !enabled || !fromBoss) {
+        // Any other change withdraws a message that has not gone out yet.
+        void api.cancelBossNotice(was.id);
+        return;
+      }
+      void api.queueBossNotice(was.id, kind).then((queued) => {
+        if (!queued) return;
+        showUndoToast({
+          text: kind === 'done' ? 'Telling your boss it is done' : 'Telling your boss it was sent',
+          seconds: BOSS_NOTICE_SECONDS,
+          onUndo: () => void updateRef.current(was.id, { status: was.status }, 'Undid the status change'),
+          onExpire: () => void api.sendBossNotices(),
+        });
+      });
+    },
+    [config],
+  );
+
   const updateItem = useCallback(
     async (id: string, patch: Partial<Item>, summary: string) => {
       const { has_files: _f, steps_total: _t, steps_done: _d, ...columns } = patch;
@@ -90,10 +124,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
         setError(err);
         return false;
       }
+      const was = before.find((it) => it.id === id);
+      if (was && patch.status !== undefined && patch.status !== was.status) tellBoss(was, patch.status);
       return true;
     },
-    [items],
+    [items, tellBoss],
   );
+
+  updateRef.current = updateItem;
 
   const patchLocal = useCallback((id: string, patch: Partial<Item>) => {
     setItems((list) => list.map((it) => (it.id === id ? { ...it, ...patch } : it)));
