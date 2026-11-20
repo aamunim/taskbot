@@ -8,12 +8,13 @@ import { openGallery } from '@/components/Gallery';
 import { ExtBadge, FileName, SiteIcon } from '@/components/library';
 import { Card, Chip, Empty, SectionHeader, Skeleton, Txt, styles, type IconName } from '@/components/ui';
 import * as api from '@/lib/api';
-import type { SharedFile, SharedLibrary, SharedLink } from '@/lib/api';
+import type { SharedFile, SharedLibrary, SharedLink, SharedSender } from '@/lib/api';
 import { dayHeading, fileGroup, fileTitle, fmtDate, fmtDateTime, fmtDuration, fmtSize, splitUrl } from '@/lib/format';
+import { roleColors } from '@/lib/roles';
 import { content, noOutline, radius, space, useTheme } from '@/lib/theme';
 
-// The boss's page: a read-only view of the files and links the boss sent, opened
-// through a private link. No sign-in, nothing here can change anything.
+// The boss's page: a read-only view of the group's whole library (files and links
+// from everyone), opened through a private link. No sign-in, nothing here can change anything.
 
 type Section = 'photo' | 'document' | 'voice' | 'link';
 const SECTIONS: { value: Section; label: string; icon: IconName }[] = [
@@ -31,6 +32,23 @@ function groupByDay<T extends { sent_at: string }>(rows: T[]): [string, T[]][] {
   const out = new Map<string, T[]>();
   for (const row of rows) out.set(dayHeading(row.sent_at), [...(out.get(dayHeading(row.sent_at)) ?? []), row]);
   return [...out.entries()];
+}
+
+/** The reader is the boss, so their own things read "You". */
+const senderLabel = (x: SharedSender) => (x.from === 'boss' ? 'You' : (x.sender_name ?? 'Someone'));
+const senderKey = (x: SharedSender) => (x.from === 'boss' ? 'boss' : `${x.from}:${x.sender_name ?? ''}`);
+
+/** Small coloured dot and name saying who sent a file or link. */
+function Sender({ of }: { of: SharedSender }) {
+  const t = useTheme();
+  const role = of.from === 'owner' ? 'me' : of.from;
+  return (
+    // The name keeps its room; the date and size beside it give way first.
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5, flexShrink: 0, maxWidth: '50%' }}>
+      <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: roleColors(t, role).solid }} />
+      <Txt variant="caption" content sub numberOfLines={1} style={{ flexShrink: 1 }}>{senderLabel(of)}</Txt>
+    </View>
+  );
 }
 
 function DownloadButton({ file, onImage }: { file: SharedFile; onImage?: boolean }) {
@@ -65,7 +83,10 @@ function FileRowView({ file, last }: { file: SharedFile; last: boolean }) {
       <ExtBadge file={file} size={44} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <FileName name={fileTitle(file)} strong />
-        <Txt variant="caption" sub numberOfLines={1}>{file.url ? meta : `Too large to keep a copy · ${fmtDate(file.sent_at)}`}</Txt>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Sender of={file} />
+          <Txt variant="caption" sub numberOfLines={1} style={{ flexShrink: 1 }}>· {file.url ? meta : `Too large to keep a copy · ${fmtDate(file.sent_at)}`}</Txt>
+        </View>
         {file.caption ? <Txt variant="caption" content sub numberOfLines={1}>{file.caption}</Txt> : null}
       </View>
       {file.url ? (
@@ -88,7 +109,10 @@ function VoiceRow({ file, last }: { file: SharedFile; last: boolean }) {
         </View>
         <View style={{ flex: 1 }}>
           <Txt variant="body" strong>Voice message</Txt>
-          <Txt variant="caption" sub>{[file.duration_seconds ? fmtDuration(file.duration_seconds) : null, fmtDateTime(file.sent_at)].filter(Boolean).join(' · ')}</Txt>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+            <Sender of={file} />
+            <Txt variant="caption" sub numberOfLines={1} style={{ flexShrink: 1 }}>· {[file.duration_seconds ? fmtDuration(file.duration_seconds) : null, fmtDateTime(file.sent_at)].filter(Boolean).join(' · ')}</Txt>
+          </View>
         </View>
         <DownloadButton file={file} />
       </View>
@@ -116,7 +140,10 @@ function LinkRowView({ link, last }: { link: SharedLink; last: boolean }) {
       <SiteIcon link={link} size={44} />
       <View style={{ flex: 1, minWidth: 0 }}>
         <Txt variant="body" content strong numberOfLines={1}>{link.title || said || `${host}${rest}`}</Txt>
-        <Txt variant="caption" sub numberOfLines={1}>{host} · {fmtDate(link.sent_at)}</Txt>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <Sender of={link} />
+          <Txt variant="caption" sub numberOfLines={1} style={{ flexShrink: 1 }}>· {host} · {fmtDate(link.sent_at)}</Txt>
+        </View>
         {link.title && said ? <Txt variant="caption" content sub numberOfLines={1}>{said}</Txt> : null}
       </View>
       <Ionicons name="open-outline" size={18} color={t.primary} />
@@ -133,6 +160,7 @@ export default function SharedLibraryPage() {
   const [error, setError] = useState<'invalid' | 'failed' | null>(null);
   const [section, setSection] = useState<Section>('photo');
   const [query, setQuery] = useState('');
+  const [who, setWho] = useState('all');
 
   useEffect(() => {
     // Keep the private address out of the Referer header of every link opened from here.
@@ -173,12 +201,12 @@ export default function SharedLibraryPage() {
 
   const q = query.trim().toLowerCase();
   const files = useMemo(
-    () => (data?.files ?? []).filter((f) => !q || `${fileTitle(f)} ${f.caption ?? ''} ${f.transcript ?? ''}`.toLowerCase().includes(q)),
-    [data, q],
+    () => (data?.files ?? []).filter((f) => (who === 'all' || senderKey(f) === who) && (!q || `${fileTitle(f)} ${f.caption ?? ''} ${f.transcript ?? ''} ${f.sender_name ?? ''}`.toLowerCase().includes(q))),
+    [data, q, who],
   );
   const links = useMemo(
-    () => (data?.links ?? []).filter((l) => !q || `${l.url} ${l.title ?? ''} ${l.said ?? ''}`.toLowerCase().includes(q)),
-    [data, q],
+    () => (data?.links ?? []).filter((l) => (who === 'all' || senderKey(l) === who) && (!q || `${l.url} ${l.title ?? ''} ${l.said ?? ''} ${l.sender_name ?? ''}`.toLowerCase().includes(q))),
+    [data, q, who],
   );
   const counts: Record<Section, number> = {
     photo: files.filter((f) => fileGroup(f) === 'photo').length,
@@ -187,6 +215,12 @@ export default function SharedLibraryPage() {
     link: links.length,
   };
   const shown = files.filter((f) => fileGroup(f) === section);
+  // One chip per person who sent something: the reader first, then the rest by name.
+  const people = useMemo(() => {
+    const seen = new Map<string, SharedSender>();
+    for (const x of [...(data?.files ?? []), ...(data?.links ?? [])]) if (!seen.has(senderKey(x))) seen.set(senderKey(x), x);
+    return [...seen.entries()].sort(([a, x], [b, y]) => (a === 'boss' ? -1 : b === 'boss' ? 1 : senderLabel(x).localeCompare(senderLabel(y))));
+  }, [data]);
 
   const pageWidth = Math.min(windowWidth, 1080);
   const inner = pageWidth - space.lg * 2;
@@ -195,7 +229,7 @@ export default function SharedLibraryPage() {
   const photos = shown.filter((f) => f.url);
   const openPhoto = (file: SharedFile) =>
     openGallery(
-      photos.map((p) => ({ key: p.id, uri: p.url!, title: fileTitle(p), sender: data?.boss_name ?? null, role: 'boss' as const, date: fmtDateTime(p.sent_at) })),
+      photos.map((p) => ({ key: p.id, uri: p.url!, title: fileTitle(p), sender: senderLabel(p), role: p.from === 'owner' ? ('me' as const) : p.from, date: fmtDateTime(p.sent_at) })),
       Math.max(0, photos.findIndex((p) => p.id === file.id)),
     );
 
@@ -205,8 +239,8 @@ export default function SharedLibraryPage() {
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
           <Image source={require('../../../assets/icon.png')} style={{ width: 44, height: 44, borderRadius: 12 }} accessibilityIgnoresInvertColors />
           <View style={{ flex: 1 }}>
-            <Txt variant="title">{data?.boss_name ? <>Files from <Txt variant="title" content>{data.boss_name}</Txt></> : 'Shared files'}</Txt>
-            <Txt variant="label" sub>Everything you sent in the group, in one place. View only.</Txt>
+            <Txt variant="title">Shared library</Txt>
+            <Txt variant="label" sub>Every file and link sent in the group, in one place. View only.</Txt>
           </View>
         </View>
 
@@ -237,6 +271,12 @@ export default function SharedLibraryPage() {
               {query ? <Ionicons name="close-circle" size={18} color={t.faint} onPress={() => setQuery('')} accessibilityLabel="Clear search" /> : null}
             </View>
 
+            {people.length > 1 ? (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
+                <Chip label="Everyone" active={who === 'all'} onPress={() => setWho('all')} />
+                {people.map(([key, x]) => <Chip key={key} label={senderLabel(x)} content active={who === key} onPress={() => setWho(key)} />)}
+              </ScrollView>
+            ) : null}
             <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
               {SECTIONS.map((s) => <Chip key={s.value} icon={s.icon} label={s.label} count={counts[s.value]} active={section === s.value} onPress={() => setSection(s.value)} />)}
             </ScrollView>
@@ -264,8 +304,10 @@ export default function SharedLibraryPage() {
                     accessibilityLabel={`View ${fileTitle(f)}, sent ${fmtDate(f.sent_at)}`}
                     style={({ pressed }) => [{ width: tile, height: tile, borderRadius: radius.md, overflow: 'hidden', backgroundColor: t.surfaceAlt, alignItems: 'center', justifyContent: 'center' }, pressed && styles.pressed]}>
                     {f.url ? <Image source={{ uri: f.url }} style={{ width: tile, height: tile }} resizeMode="cover" /> : <Txt variant="caption" sub style={{ textAlign: 'center', padding: 8 }}>Not kept</Txt>}
-                    <View style={{ position: 'absolute', left: 6, bottom: 6, paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: 'rgba(15,12,40,0.6)' }}>
-                      <Txt variant="caption" color="#FFFFFF">{fmtDate(f.sent_at)}</Txt>
+                    <View style={{ position: 'absolute', left: 6, bottom: 6, right: 44, alignItems: 'flex-start' }}>
+                      <View style={{ maxWidth: '100%', paddingHorizontal: 7, paddingVertical: 2, borderRadius: radius.pill, backgroundColor: 'rgba(15,12,40,0.6)' }}>
+                        <Txt variant="caption" content color="#FFFFFF" numberOfLines={1}>{senderLabel(f)} · {fmtDate(f.sent_at)}</Txt>
+                      </View>
                     </View>
                     <View style={{ position: 'absolute', right: 6, bottom: 6 }}><DownloadButton file={f} onImage /></View>
                   </Pressable>

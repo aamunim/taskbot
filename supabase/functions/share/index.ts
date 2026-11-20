@@ -1,8 +1,8 @@
 import { db, json, recordError } from "../_shared/util.ts";
 
-// The boss's page: given a valid share link token, returns the files and links the
-// boss sent (never the owner's own, never tasks or notes). No sign-in; the token is
-// the whole credential, so every query here is filtered server-side.
+// The boss's page: given a valid share link token, returns the whole library of the
+// group (files and links from everyone, each labelled with who sent it), and never
+// tasks, notes or anything else. No sign-in; the token is the whole credential.
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info",
@@ -43,26 +43,26 @@ async function handle(req: Request): Promise<Response> {
     const { data: cfg } = await supabase.from("app_config").select("owner_tg_id,boss_tg_id,boss_name").eq("id", 1).single();
     if (!cfg?.owner_tg_id) return json({ error: "invalid" }, 404);
     // Same rule as the app: the chosen boss, or everyone except the owner while none is chosen.
-    const fromBoss = (m: MessageInfo | null) =>
-      !!m && m.sender_tg_id !== null && m.sender_tg_id !== cfg.owner_tg_id &&
-      (cfg.boss_tg_id === null || m.sender_tg_id === cfg.boss_tg_id);
+    const roleOf = (m: MessageInfo): "boss" | "owner" | "other" =>
+      m.sender_tg_id === cfg.owner_tg_id ? "owner"
+        : m.sender_tg_id !== null && (cfg.boss_tg_id === null || m.sender_tg_id === cfg.boss_tg_id) ? "boss" : "other";
 
     const { data: fileRows, error: fileErr } = await supabase.from("files")
       .select("id,kind,file_name,mime_type,size_bytes,duration_seconds,storage_path,status,created_at,messages!inner(sender_tg_id,sender_name,sent_at,text,transcript)")
-      .order("created_at", { ascending: false }).limit(MAX_ROWS * 4);
+      .order("created_at", { ascending: false }).limit(MAX_ROWS);
     if (fileErr) throw fileErr;
     const { data: linkRows, error: linkErr } = await supabase.from("links")
       .select("id,url,domain,title,description,image_url,favicon_url,created_at,messages!inner(sender_tg_id,sender_name,sent_at,text)")
-      .order("created_at", { ascending: false }).limit(MAX_ROWS * 4);
+      .order("created_at", { ascending: false }).limit(MAX_ROWS);
     if (linkErr) throw linkErr;
 
     const one = <T>(m: T | T[] | null): T | null => (Array.isArray(m) ? (m[0] ?? null) : m);
     const files = (fileRows ?? [])
       .map((f) => ({ ...f, message: one(f.messages as unknown as MessageInfo | MessageInfo[] | null) }))
-      .filter((f) => fromBoss(f.message)).slice(0, MAX_ROWS);
+      .filter((f): f is typeof f & { message: MessageInfo } => f.message !== null);
     const links = (linkRows ?? [])
       .map((l) => ({ ...l, message: one(l.messages as unknown as MessageInfo | MessageInfo[] | null) }))
-      .filter((l) => fromBoss(l.message)).slice(0, MAX_ROWS);
+      .filter((l): l is typeof l & { message: MessageInfo } => l.message !== null);
 
     const paths = files.filter((f) => f.status === "stored" && f.storage_path).map((f) => f.storage_path as string);
     const urls = new Map<string, string>();
@@ -84,15 +84,18 @@ async function handle(req: Request): Promise<Response> {
         mime_type: f.mime_type,
         size_bytes: f.size_bytes,
         duration_seconds: f.duration_seconds,
-        sent_at: f.message!.sent_at,
-        caption: f.message!.text,
-        transcript: f.message!.transcript,
+        sent_at: f.message.sent_at,
+        sender_name: f.message.sender_name,
+        from: roleOf(f.message),
+        caption: f.message.text,
+        transcript: f.message.transcript,
         // Absent when the file was too large for the bot to keep, or failed to store.
         url: f.storage_path ? (urls.get(f.storage_path) ?? null) : null,
       })),
       links: links.map((l) => ({
         id: l.id, url: l.url, domain: l.domain, title: l.title, description: l.description,
-        image_url: l.image_url, favicon_url: l.favicon_url, sent_at: l.message!.sent_at, said: l.message!.text,
+        image_url: l.image_url, favicon_url: l.favicon_url, sent_at: l.message.sent_at, said: l.message.text,
+        sender_name: l.message.sender_name, from: roleOf(l.message),
       })),
     });
   } catch (e) {

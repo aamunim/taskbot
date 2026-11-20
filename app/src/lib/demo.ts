@@ -329,16 +329,18 @@ export const demoApi = {
     };
     return delay(demoShare);
   },
-  /** What the boss's page shows: only what the boss sent. */
+  /** What the boss's page shows: the whole library, labelled by sender. */
   shared: () =>
     delay({
       boss_name: BOSS_NAME,
-      files: files.filter((f) => f.sender_tg_id === BOSS).map((f) => ({
+      files: files.map((f) => ({
+        sender_name: f.sender_name, from: f.sender_tg_id === BOSS ? ('boss' as const) : f.sender_tg_id === ME ? ('owner' as const) : ('other' as const),
         id: f.id, kind: f.kind, file_name: f.file_name, mime_type: f.mime_type, size_bytes: f.size_bytes,
         duration_seconds: f.duration_seconds, sent_at: f.sent_at, caption: f.text, transcript: f.transcript,
         url: f.status === 'stored' && f.storage_path ? (demoSignedUrl(f.storage_path) ?? 'https://example.com/file') : null,
       })),
-      links: links.filter((l) => l.sender_tg_id === BOSS).map((l) => ({
+      links: links.map((l) => ({
+        sender_name: l.sender_name, from: l.sender_tg_id === BOSS ? ('boss' as const) : l.sender_tg_id === ME ? ('owner' as const) : ('other' as const),
         id: l.id, url: l.url, domain: l.domain, title: l.title, description: l.description,
         image_url: l.image_url, favicon_url: l.favicon_url, sent_at: l.sent_at, said: l.text,
       })),

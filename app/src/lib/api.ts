@@ -340,7 +340,7 @@ export type SharedFile = {
   caption: string | null;
   transcript: string | null;
   url: string | null;
-};
+} & SharedSender;
 export type SharedLink = {
   id: string;
   url: string;
@@ -351,7 +351,9 @@ export type SharedLink = {
   favicon_url: string | null;
   sent_at: string;
   said: string | null;
-};
+} & SharedSender;
+/** Who sent it, from the boss's point of view: themselves, the owner, or someone else in the group. */
+export type SharedSender = { sender_name: string | null; from: 'boss' | 'owner' | 'other' };
 export type SharedLibrary = { boss_name: string | null; files: SharedFile[]; links: SharedLink[] };
 
 /** What a share link shows. `invalid` covers a wrong, revoked or expired link alike. */

@@ -182,7 +182,7 @@ export default function SettingsScreen() {
   };
   const bossPage = (
         <Card style={{ gap: space.lg }}>
-          <Txt variant="caption" sub>A private web page where your boss can browse and download the files and links they sent. They see nothing of yours, and cannot change anything. Anyone who has the link can open it, so share it only with your boss.</Txt>
+          <Txt variant="caption" sub>A private web page where your boss can browse and download every file and link in the library, yours and everyone else's included. Tasks, notes and your private notes are never shown, and nothing can be changed. Anyone who has the link can open it, so share it only with your boss.</Txt>
           {share ? (
             <>
               <View style={{ gap: 4 }}>
