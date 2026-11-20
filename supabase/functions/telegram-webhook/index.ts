@@ -1,6 +1,9 @@
+import { handleButton } from "../_shared/actions.ts";
+import { answerQuestion } from "../_shared/ask.ts";
 import { processChat } from "../_shared/pipeline.ts";
+import { todayOverview } from "../_shared/overview.ts";
 import {
-  displayName, extractFiles, extractLinks, forwardOrigin, messageKind, messageSender, sendMessage, type TgMessage, type TgUpdate,
+  answerCallback, displayName, extractFiles, extractLinks, forwardOrigin, messageKind, messageSender, sendMessage, tg, type TgMessage, type TgUpdate,
 } from "../_shared/telegram.ts";
 import { db, json, optionalEnv, recordError, timingSafeEqual, webhookSecret } from "../_shared/util.ts";
 
@@ -57,6 +60,19 @@ async function approveChat(chatId: number): Promise<void> {
 async function handleUpdate(update: TgUpdate): Promise<number | null> {
   const supabase = db();
   await supabase.from("app_config").update({ last_webhook_at: new Date().toISOString() }).eq("id", 1);
+
+  if (update.callback_query) {
+    const q = update.callback_query;
+    // Always answer, or the button keeps spinning in Telegram.
+    let flash = "Something went wrong";
+    try {
+      flash = await handleButton(q);
+    } catch (e) {
+      await recordError("button", e);
+    }
+    await answerCallback(q.id, flash).catch(() => {});
+    return null;
+  }
 
   if (update.my_chat_member) {
     const { chat, from, new_chat_member } = update.my_chat_member;
@@ -187,7 +203,30 @@ async function handlePrivate(m: TgMessage): Promise<void> {
   const supabase = db();
   const match = /^\/start login_([a-f0-9]{16,64})$/.exec(m.text ?? "");
   if (!match) {
-    await sendMessage(m.chat.id, "I organise the work messages from your group. To sign in, tap “Continue with Telegram” in the app.");
+    const known = await ownerId();
+    const text = (m.text ?? "").trim();
+    if (known === null || m.from.id !== known || !text) {
+      await sendMessage(m.chat.id, "I organise the work messages from your group. To sign in, tap “Continue with Telegram” in the app.");
+      return;
+    }
+    if (/^\/(start|help)\b/.test(text)) {
+      await sendMessage(m.chat.id, "Ask me anything about your tasks, for example “what is due this week?” or “what did my boss say about the budget?”.\n\n/today shows today's list.");
+      return;
+    }
+    if (/^\/today\b/.test(text)) {
+      await sendMessage(m.chat.id, await todayOverview());
+      return;
+    }
+    // Answering takes a few seconds; reply to Telegram first and finish in the background.
+    EdgeRuntime.waitUntil((async () => {
+      try {
+        await tg("sendChatAction", { chat_id: m.chat.id, action: "typing" }).catch(() => {});
+        await tg("sendMessage", { chat_id: m.chat.id, text: (await answerQuestion(text)).slice(0, 4000) });
+      } catch (e) {
+        await recordError("ask", e);
+        await sendMessage(m.chat.id, "Sorry, I could not answer that just now. Please try again.").catch(() => {});
+      }
+    })());
     return;
   }
 

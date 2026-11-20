@@ -1,5 +1,6 @@
 import { analyse, IMAGE_MEDIA_TYPES, type Operation } from "./claude.ts";
 import { transcribe } from "./elevenlabs.ts";
+import { proposeDraft } from "./drafts.ts";
 import { fetchLinkMeta } from "./linkmeta.ts";
 import { flushBossNotices } from "./notices.ts";
 import { downloadFile, MAX_DOWNLOAD_BYTES, sendMessage } from "./telegram.ts";
@@ -264,6 +265,13 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
         await supabase.from("subtasks").insert(steps.map((title, position) => ({ item_id: itemId, title: title.slice(0, 200), position })));
       }
       created.push({ title: row.title, type: row.type, due: row.due_at, review });
+      const question = op.question?.trim();
+      const fromBoss = source.sender_tg_id !== null && source.sender_tg_id !== ownerTgId;
+      if (question && fromBoss && row.type === "task" && ownerTgId && cfg?.clarify_enabled) {
+        await proposeDraft(ownerTgId, {
+          kind: "clarify", itemId, itemTitle: row.title, chatId, replyTo: source.tg_message_id, text: question.slice(0, 500),
+        }).catch((e) => console.error("clarify draft failed", e));
+      }
     }
 
     const links = (sources.length ? sources : [source]).map((m) => ({ item_id: itemId, message_id: m.id }));

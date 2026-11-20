@@ -70,8 +70,10 @@ export interface TgMessage {
   photo?: TgFileBase[];
   [key: string]: unknown;
 }
+export interface TgCallbackQuery { id: string; from: TgUser; data?: string; message?: { message_id: number; chat: TgChat } }
 export interface TgUpdate {
   update_id: number;
+  callback_query?: TgCallbackQuery;
   message?: TgMessage;
   edited_message?: TgMessage;
   my_chat_member?: { chat: TgChat; from: TgUser; new_chat_member: { status: string } };
@@ -169,4 +171,48 @@ export function messageSender(m: TgMessage): { id: number | null; name: string; 
     return { id: m.sender_chat.id, name: m.author_signature ? `${m.author_signature} · ${label}` : label, isBot: false };
   }
   return { id: m.from?.id ?? null, name: displayName(m.from), isBot: !!m.from?.is_bot };
+}
+
+// ---------------------------------------------------------------- buttons
+
+/** A button under a bot message; `data` comes back to the webhook when it is pressed (max 64 bytes). */
+export type Button = { text: string; data: string };
+
+const keyboard = (rows: Button[][]) => ({
+  inline_keyboard: rows.map((row) => row.map((b) => ({ text: b.text, callback_data: b.data }))),
+});
+
+export function sendWithButtons(chatId: number, html: string, rows: Button[][]): Promise<{ message_id: number }> {
+  return tg("sendMessage", {
+    chat_id: chatId,
+    text: html,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    reply_markup: keyboard(rows),
+  });
+}
+
+/** Replaces a bot message's text and buttons (no buttons when `rows` is empty). */
+export function editMessage(chatId: number, messageId: number, html: string, rows: Button[][] = []): Promise<unknown> {
+  return tg("editMessageText", {
+    chat_id: chatId,
+    message_id: messageId,
+    text: html,
+    parse_mode: "HTML",
+    link_preview_options: { is_disabled: true },
+    reply_markup: keyboard(rows),
+  });
+}
+
+export function answerCallback(id: string, text?: string): Promise<unknown> {
+  return tg("answerCallbackQuery", { callback_query_id: id, ...(text ? { text } : {}) });
+}
+
+/** Plain-text post in a group, as a reply to a message when one is given. */
+export function postInGroup(chatId: number, text: string, replyTo?: number | null): Promise<unknown> {
+  return tg("sendMessage", {
+    chat_id: chatId,
+    text: text.slice(0, 3500),
+    ...(replyTo ? { reply_parameters: { message_id: replyTo, allow_sending_without_reply: true } } : {}),
+  });
 }

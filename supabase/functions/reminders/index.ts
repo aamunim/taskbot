@@ -1,8 +1,15 @@
-import { messageLink, sendMessage } from "../_shared/telegram.ts";
+import { taskButtons } from "../_shared/actions.ts";
+import { proposeDraft, sendDraftNow } from "../_shared/drafts.ts";
+import { messageLink, sendMessage, sendWithButtons } from "../_shared/telegram.ts";
 import { db, escapeHtml, isAdmin, json, localDate, localStamp, localTime, recordError } from "../_shared/util.ts";
 
 interface Task {
   waiting_since: string | null;
+  remind_at: string | null;
+  chat_id: number | null;
+  source_sender_tg_id: number | null;
+  source_message_id: string | null;
+  completed_at?: string | null;
   id: string;
   title: string;
   due_at: string | null;
@@ -42,7 +49,7 @@ async function run(): Promise<Record<string, number>> {
   let sent = 0;
 
   const { data, error } = await supabase.from("items")
-    .select("id,title,due_at,due_all_day,priority,status,waiting_since")
+    .select("id,title,due_at,due_all_day,priority,status,waiting_since,remind_at,chat_id,source_sender_tg_id,source_message_id")
     .eq("type", "task").eq("dismissed", false).neq("status", "done")
     .order("due_at", { ascending: true, nullsFirst: false }).limit(200);
   if (error) throw error;
@@ -55,11 +62,34 @@ async function run(): Promise<Record<string, number>> {
   // Deadline approaching / just passed.
   const soon = now.getTime() + cfg.remind_before_minutes * 60_000;
   for (const t of tasks) {
+    // "Remind me again" set from a reminder's buttons.
+    if (t.remind_at && new Date(t.remind_at).getTime() <= now.getTime()) {
+      await supabase.from("items").update({ remind_at: null }).eq("id", t.id);
+      await sendWithButtons(owner, `⏰ <b>Reminder</b>\n${escapeHtml(t.title)}${t.due_at ? `\nDue: ${fmtDue(t)}` : ""}`, taskButtons(t.id));
+      sent++;
+    }
     if (t.status === "waiting") {
-      // Delivered but no reply from the boss for two days: worth a nudge.
+      // Delivered, but the boss has not replied for a while.
+      const days: number = cfg.followup_days;
       const since = t.waiting_since ? new Date(t.waiting_since).getTime() : now.getTime();
-      if (now.getTime() - since >= 2 * 86400_000 && await firstTime(`waiting:${t.id}:${t.waiting_since}`)) {
-        await sendMessage(owner, `⏳ <b>Still waiting on your boss</b>\n${escapeHtml(t.title)}\nNo reply for 2 days. You may want to follow up.`);
+      if (now.getTime() - since >= days * 86400_000 && await firstTime(`waiting:${t.id}:${t.waiting_since}`)) {
+        const fromBoss = t.source_sender_tg_id !== null && t.source_sender_tg_id !== owner;
+        const { data: source } = t.source_message_id
+          ? await supabase.from("messages").select("chat_id,tg_message_id").eq("id", t.source_message_id).maybeSingle()
+          : { data: null };
+        const chatId: number | null = source?.chat_id ?? t.chat_id;
+        if (cfg.followup_mode === "off" || !fromBoss || chatId === null) {
+          await sendMessage(owner, `⏳ <b>Still waiting on your boss</b>\n${escapeHtml(t.title)}\nNo reply for ${days} days. You may want to follow up.`);
+        } else {
+          const template: string = cfg.followup_message || "{task}";
+          const draft = {
+            kind: "followup" as const, itemId: t.id, itemTitle: t.title, chatId, replyTo: source?.tg_message_id ?? null,
+            text: (template.includes("{task}") ? template.replaceAll("{task}", t.title) : `${template} ${t.title}`).slice(0, 1000),
+            note: `Waiting for ${days} days.`,
+          };
+          if (cfg.followup_mode === "auto") await sendDraftNow(owner, draft);
+          else await proposeDraft(owner, draft);
+        }
         sent++;
       }
       continue;
@@ -68,12 +98,12 @@ async function run(): Promise<Record<string, number>> {
     const due = new Date(t.due_at).getTime();
     if (due > now.getTime() && due <= soon) {
       if (await firstTime(`due:${t.id}:${t.due_at}`)) {
-        await sendMessage(owner, `⏰ <b>Deadline approaching</b>\n${escapeHtml(t.title)}\nDue: ${fmtDue(t)}`);
+        await sendWithButtons(owner, `⏰ <b>Deadline approaching</b>\n${escapeHtml(t.title)}\nDue: ${fmtDue(t)}`, taskButtons(t.id));
         sent++;
       }
     } else if (due <= now.getTime() && due > now.getTime() - 86400_000) {
       if (await firstTime(`overdue:${t.id}:${t.due_at}`)) {
-        await sendMessage(owner, `🔴 <b>Deadline passed</b>\n${escapeHtml(t.title)}\nWas due: ${fmtDue(t)}`);
+        await sendWithButtons(owner, `🔴 <b>Deadline passed</b>\n${escapeHtml(t.title)}\nWas due: ${fmtDue(t)}`, taskButtons(t.id));
         sent++;
       }
     }
@@ -99,6 +129,17 @@ async function run(): Promise<Record<string, number>> {
     sent++;
   }
 
+  // Weekly report for the boss: proposed to the owner first, never posted unasked.
+  const weekday = new Date(`${today}T12:00:00Z`).getUTCDay();
+  const sinceReportTime = minutes(localTime(now, tz)) - minutes(String(cfg.weekly_report_time));
+  if (cfg.weekly_report_enabled && weekday === cfg.weekly_report_day && sinceReportTime >= 0 && sinceReportTime < 120 && await firstTime(`weekly:${today}`)) {
+    const report = await weeklyReport(owner, tasks, tz);
+    if (report) {
+      await proposeDraft(owner, { kind: "weekly", chatId: report.chatId, text: report.text });
+      sent++;
+    }
+  }
+
   // Messages that could not be processed after every retry: say so instead of failing silently.
   const { data: failed } = await supabase.from("messages")
     .select("id,chat_id,tg_message_id").eq("process_status", "failed").limit(20);
@@ -110,4 +151,34 @@ async function run(): Promise<Record<string, number>> {
     }
   }
   return { sent };
+}
+
+/** Plain-text summary of the week's work on the boss's tasks, and the group it belongs in. */
+async function weeklyReport(owner: number, open: Task[], tz: string): Promise<{ chatId: number; text: string } | null> {
+  const supabase = db();
+  const weekAgo = new Date(Date.now() - 7 * 86400_000).toISOString();
+  const { data: finished } = await supabase.from("items")
+    .select("id,title,chat_id,source_sender_tg_id,completed_at")
+    .eq("type", "task").eq("dismissed", false).eq("status", "done").gte("completed_at", weekAgo)
+    .order("completed_at", { ascending: true }).limit(100);
+  const fromBoss = <T extends { source_sender_tg_id: number | null }>(t: T) =>
+    t.source_sender_tg_id !== null && t.source_sender_tg_id !== owner;
+  const done = (finished ?? []).filter(fromBoss);
+  const mine = open.filter(fromBoss);
+  const doing = mine.filter((t) => t.status === "doing");
+  const waiting = mine.filter((t) => t.status === "waiting");
+  const todo = mine.filter((t) => t.status === "todo");
+  if (!done.length && !mine.length) return null;
+  const chatId = [...done, ...mine].map((t) => t.chat_id).find((c): c is number => c !== null);
+  if (chatId === undefined) return null;
+
+  const list = (rows: { title: string }[]) => rows.slice(0, 12).map((t) => `• ${t.title}`).join("\n") +
+    (rows.length > 12 ? `\n… and ${rows.length - 12} more` : "");
+  const from = localDate(new Date(Date.now() - 6 * 86400_000), tz);
+  const parts = [`📊 Weekly update (${from} to ${localDate(new Date(), tz)})`];
+  if (done.length) parts.push(`✅ Done (${done.length})\n${list(done)}`);
+  if (doing.length) parts.push(`🔄 In progress (${doing.length})\n${list(doing)}`);
+  if (waiting.length) parts.push(`⏳ Waiting for your reply (${waiting.length})\n${list(waiting)}`);
+  if (todo.length) parts.push(`📌 Not started yet (${todo.length})\n${list(todo)}`);
+  return { chatId, text: parts.join("\n\n") };
 }

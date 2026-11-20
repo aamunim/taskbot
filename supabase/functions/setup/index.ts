@@ -16,7 +16,7 @@ Deno.serve(async (req) => {
   await tg("setWebhook", {
     url: `${functionsUrl}/telegram-webhook`,
     secret_token: await webhookSecret(),
-    allowed_updates: ["message", "edited_message", "my_chat_member"],
+    allowed_updates: ["message", "edited_message", "my_chat_member", "callback_query"],
   });
   const me = await tg<{ username: string; can_read_all_group_messages?: boolean }>("getMe");
   const info = await tg<{ url: string; pending_update_count: number; last_error_message?: string }>("getWebhookInfo");

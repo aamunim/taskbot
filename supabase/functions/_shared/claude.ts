@@ -17,6 +17,8 @@ export interface Operation {
   keywords: string | null;
   /** Suggested checklist steps for a new task. */
   subtasks: string[] | null;
+  /** A question worth asking the boss when the instruction cannot be acted on as given. */
+  question: string | null;
   confidence: number;
   message_refs: string[];
   change_summary: string | null;
@@ -36,7 +38,7 @@ const OUTPUT_SCHEMA = {
         additionalProperties: false,
         required: [
           "action", "item_ref", "type", "title", "details", "due_at", "due_all_day", "due_text",
-          "priority", "status", "tags", "keywords", "subtasks", "confidence", "message_refs", "change_summary",
+          "priority", "status", "tags", "keywords", "subtasks", "question", "confidence", "message_refs", "change_summary",
         ],
         properties: {
           action: { type: "string", enum: ["create", "update"] },
@@ -52,6 +54,7 @@ const OUTPUT_SCHEMA = {
           tags: nullable({ type: "array", items: { type: "string" } }),
           keywords: nullable({ type: "string" }),
           subtasks: nullable({ type: "array", items: { type: "string" } }),
+          question: nullable({ type: "string" }),
           confidence: { type: "number" },
           message_refs: { type: "array", items: { type: "string" } },
           change_summary: nullable({ type: "string" }),
@@ -75,7 +78,7 @@ How to decide between create and update
 - Several short messages that together describe one piece of work are one item, not several. List every contributing message in message_refs.
 - If a new message changes, clarifies, extends, reschedules, cancels or completes an existing item, update that item (action "update", item_ref set) instead of creating a duplicate. A reply to an earlier message, or wording such as "that report" or "ওটা", usually points at an existing item.
 - A new message marked as edited replaces its earlier wording: update the items already linked to it.
-- If the owner clearly reports a task started, set status "doing". If the owner reports having delivered, sent or submitted the work and the boss has not yet responded, set status "waiting" (waiting on the boss). If the boss accepts or acknowledges delivered work, or the owner reports something finished that needs no reply, set status "done". If the boss cancels a task, set status "done" and say it was cancelled in change_summary.
+- If the owner clearly reports a task started, set status "doing". If the owner reports having delivered, sent or submitted the work and the boss has not yet responded, set status "waiting" (waiting on the boss). The owner posting the file, photo or link that a task asked for counts as delivering it, even with no words. If the boss accepts or acknowledges delivered work, or the owner reports something finished that needs no reply, set status "done". If the boss cancels a task, set status "done" and say it was cancelled in change_summary.
 - A message marked "forwarded by the owner" was written by the labelled speaker somewhere else and brought into the group by the owner; treat it exactly as if that speaker had written it here.
 - For an update, set only the fields that change and leave every other field null. change_summary states in one short English sentence what changed and why.
 - For a create, set type, title, priority and tags; change_summary is null.
@@ -89,6 +92,7 @@ Field rules
 - tags: one to three short lowercase topic words useful for filtering (client or project names, kinds of work).
 - keywords: extra search words: the main terms of this item written in the other scripts and languages (Bangla script, Latin transliteration, English), space separated.
 - subtasks: only for a new task that clearly involves several distinct steps: two to six short checklist steps in the message's language, taken from what the message asks for. Null for simple tasks, for notes, and for updates; never pad a task with generic steps.
+- question: only for a new task from the boss that cannot be acted on as written because something essential is missing or ambiguous (which thing is meant, or what exactly is wanted). One short, polite question to the boss, in the language and tone the boss used, that would settle it. Null when the task is clear enough to start, and null when only the deadline is missing.
 - confidence: 0 to 1. Use below 0.7 when you are unsure this is really a task or note, unsure which item it belongs to, or the transcript is too garbled to trust.
 - message_refs: references of the NEW messages this operation comes from. For a create, put the message that originated the item first: the tracker files the item under that message's speaker (boss or owner).
 
