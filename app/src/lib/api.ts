@@ -189,9 +189,9 @@ export async function setStar(table: 'files' | 'links', id: string, starred: boo
   return error?.message ?? null;
 }
 
-export async function signedUrl(path: string): Promise<string | null> {
+export async function signedUrl(path: string, seconds = 3600): Promise<string | null> {
   if (DEMO) return demoSignedUrl(path);
-  const { data } = await supabase.storage.from('files').createSignedUrl(path, 3600);
+  const { data } = await supabase.storage.from('files').createSignedUrl(path, seconds);
   return data?.signedUrl ?? null;
 }
 

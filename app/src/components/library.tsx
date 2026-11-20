@@ -5,6 +5,7 @@ import { useState } from 'react';
 import { Image, Pressable, Text, View } from 'react-native';
 import { signedUrl } from '@/lib/api';
 import { notify } from '@/lib/dialog';
+import type { ShareTarget } from '@/lib/share';
 import { useData } from '@/lib/data';
 import { fileExt, fileGroup, fileStatusText, fileTitle, fmtDate, fmtDateTime, fmtSize, splitUrl } from '@/lib/format';
 import { tap } from '@/lib/haptics';
@@ -14,6 +15,7 @@ import type { FileRow, LibFile, LibLink, LinkRow as LinkRecord, Role } from '@/l
 import { AudioPlayer } from './AudioPlayer';
 import { openGallery } from './Gallery';
 import { openItem } from './items';
+import { ShareButton } from './ShareSheet';
 import { Card, RoleBadge, Txt, styles } from './ui';
 
 /** Opens a stored file in the phone's viewer/browser through a signed URL. */
@@ -53,6 +55,16 @@ export function ExtBadge({ file, size = 44 }: { file: Pick<FileRow, 'file_name' 
     </View>
   );
 }
+
+export const fileShareTarget = (f: Pick<FileRow, 'storage_path' | 'status' | 'file_name' | 'mime_type' | 'kind'>): ShareTarget => ({
+  kind: 'file',
+  title: fileTitle(f),
+  storagePath: f.status === 'stored' ? f.storage_path : null,
+  fileName: f.file_name ?? fileTitle(f),
+  mimeType: f.mime_type,
+});
+
+export const linkShareTarget = (l: LibLink): ShareTarget => ({ kind: 'link', title: linkLabel(l), url: l.url });
 
 export function StarButton({ starred, onPress, onImage }: { starred: boolean; onPress: () => void; onImage?: boolean }) {
   const t = useTheme();
@@ -101,6 +113,9 @@ export function PhotoTile({ file, thumb, onStar, onOpen, size }: FileProps & { s
       <View style={{ position: 'absolute', top: 6, right: 6 }}>
         <StarButton starred={file.starred} onPress={onStar} onImage />
       </View>
+      <View style={{ position: 'absolute', right: 6, bottom: 6 }}>
+        <ShareButton target={fileShareTarget(file)} onImage />
+      </View>
       <View style={{ position: 'absolute', left: 8, bottom: 8, width: 10, height: 10, borderRadius: 5, borderWidth: 2, borderColor: '#FFFFFF', backgroundColor: roleColors(t, role(file.sender_tg_id)).solid }} />
     </Pressable>
   );
@@ -124,6 +139,7 @@ export function FileListRow({ file, thumb, onStar, onOpen }: FileProps) {
           {problem ? <Txt variant="caption" color={file.status === 'pending' ? t.sub : t.danger}>{problem}</Txt> : null}
         </View>
         <ItemLink id={file.item_id} />
+        <ShareButton target={fileShareTarget(file)} />
         <StarButton starred={file.starred} onPress={onStar} />
       </View>
     </Card>
@@ -136,8 +152,9 @@ export function DocTile({ file, onStar, width }: FileProps & { width: number }) 
   const problem = fileStatusText(file);
   return (
     <Card onPress={file.status === 'stored' ? () => openFile(file) : undefined} style={{ width, padding: space.md, gap: space.sm }}>
-      <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>
         <View style={{ flex: 1 }}><ExtBadge file={file} size={46} /></View>
+        <ShareButton target={fileShareTarget(file)} />
         <StarButton starred={file.starred} onPress={onStar} />
       </View>
       <Txt content strong numberOfLines={2} style={{ minHeight: 48 }}>{fileTitle(file)}</Txt>
@@ -160,6 +177,7 @@ export function VoiceCard({ file, onStar }: FileProps) {
         <View style={{ flex: 1 }}><RoleBadge role={role(file.sender_tg_id)} name={file.sender_name} /></View>
         <Txt variant="caption" sub>{fmtDate(file.sent_at)}</Txt>
         <ItemLink id={file.item_id} />
+        <ShareButton target={fileShareTarget(file)} />
         <StarButton starred={file.starred} onPress={onStar} />
       </View>
       {file.status === 'stored' && file.storage_path ? (
@@ -258,6 +276,7 @@ export function LinkRow({ link, onStar, showHost = true, last }: LinkProps & { s
           </Txt>
         </View>
       </View>
+      <ShareButton target={linkShareTarget(link)} />
       <StarButton starred={link.starred} onPress={onStar} />
       <Ionicons name="open-outline" size={18} color={t.primary} />
     </Pressable>
@@ -276,7 +295,7 @@ export function LinkTable({ links, onStar }: { links: LibLink[]; onStar: (link: 
         <Txt variant="overline" sub style={cell.site}>Site</Txt>
         <Txt variant="overline" sub style={cell.from}>From</Txt>
         <Txt variant="overline" sub style={cell.date}>Shared</Txt>
-        <View style={{ width: 64 }} />
+        <View style={{ width: 96 }} />
       </View>
       {links.map((link) => {
         const { host } = splitUrl(link.url, link.domain);
@@ -299,7 +318,8 @@ export function LinkTable({ links, onStar }: { links: LibLink[]; onStar: (link: 
             <Txt variant="label" sub numberOfLines={1} style={cell.site}>{host}</Txt>
             <View style={cell.from}><RoleBadge role={role(link.sender_tg_id)} name={link.sender_name} /></View>
             <Txt variant="label" sub style={cell.date}>{fmtDate(link.sent_at)}</Txt>
-            <View style={{ width: 64, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: space.md }}>
+            <View style={{ width: 96, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: space.md }}>
+              <ShareButton target={linkShareTarget(link)} />
               <StarButton starred={link.starred} onPress={() => onStar(link)} />
               <Ionicons name="open-outline" size={18} color={t.primary} />
             </View>
@@ -326,6 +346,7 @@ export function LinkCard({ link, onStar }: LinkProps) {
             <Txt variant="body" content strong numberOfLines={2}>{link.title?.trim() || host}</Txt>
             <Txt variant="caption" sub numberOfLines={1}>{link.title ? host : rest || host}</Txt>
           </View>
+          <ShareButton target={linkShareTarget(link)} />
           <StarButton starred={link.starred} onPress={onStar} />
         </View>
         {link.description ? <Txt variant="label" sub numberOfLines={2}>{link.description}</Txt> : null}
@@ -358,8 +379,9 @@ export function LinkTile({ link, onStar, width }: LinkProps & { width: number })
     <Card onPress={() => Linking.openURL(link.url)} style={{ width, padding: 0, overflow: 'hidden' }}>
       <PreviewImage link={link} height={84} />
       <View style={{ padding: space.md, gap: space.sm }}>
-        <View style={{ flexDirection: 'row', alignItems: 'flex-start' }}>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.md }}>
           <View style={{ flex: 1 }}><SiteIcon link={link} size={link.image_url ? 30 : 46} /></View>
+          <ShareButton target={linkShareTarget(link)} />
           <StarButton starred={link.starred} onPress={onStar} />
         </View>
         <Txt variant="body" content strong numberOfLines={2}>{linkLabel(link)}</Txt>
