@@ -1,6 +1,6 @@
 import { processChat } from "../_shared/pipeline.ts";
 import {
-  displayName, extractFiles, extractLinks, messageKind, sendMessage, type TgMessage, type TgUpdate,
+  displayName, extractFiles, extractLinks, forwardOrigin, messageKind, sendMessage, type TgMessage, type TgUpdate,
 } from "../_shared/telegram.ts";
 import { db, json, optionalEnv, recordError, timingSafeEqual, webhookSecret } from "../_shared/util.ts";
 
@@ -34,6 +34,9 @@ Deno.serve(async (req) => {
     return json({ error: "failed" }, 500);
   }
 });
+
+const sameName = (a: string | null | undefined, b: string) =>
+  !!a && a.trim().toLowerCase() === b.trim().toLowerCase();
 
 async function ownerId(): Promise<number | null> {
   const { data, error } = await db().from("app_config").select("owner_tg_id").eq("id", 1).single();
@@ -104,6 +107,23 @@ async function saveGroupMessage(m: TgMessage, edited: boolean): Promise<number |
     }
   }
 
+  // When the owner forwards a message the boss sent somewhere else, file it under
+  // its original author so it is treated exactly like a message the boss wrote here.
+  let senderId: number | null = m.from?.id ?? null;
+  let senderName = displayName(m.from);
+  let forwardedBy: { id: number; name: string } | null = null;
+  const origin = forwardOrigin(m);
+  if (origin && m.from && owner !== null && m.from.id === owner && origin.id !== owner) {
+    forwardedBy = { id: m.from.id, name: displayName(m.from) };
+    senderId = origin.id;
+    senderName = origin.name;
+    if (senderId === null) {
+      // The author hides their account when forwarded: recognise the boss by name.
+      const { data: cfg } = await supabase.from("app_config").select("boss_tg_id, boss_name").eq("id", 1).single();
+      if (cfg?.boss_tg_id && sameName(cfg.boss_name, origin.name)) senderId = cfg.boss_tg_id;
+    }
+  }
+
   const files = extractFiles(m);
   const kind = messageKind(m, files);
   const analysable = kind !== "service" && !m.from?.is_bot;
@@ -112,8 +132,10 @@ async function saveGroupMessage(m: TgMessage, edited: boolean): Promise<number |
   const { data: saved, error } = await supabase.from("messages").upsert({
     chat_id: m.chat.id,
     tg_message_id: m.message_id,
-    sender_tg_id: m.from?.id ?? null,
-    sender_name: displayName(m.from),
+    sender_tg_id: senderId,
+    sender_name: senderName,
+    forwarded_by_tg_id: forwardedBy?.id ?? null,
+    forwarded_by_name: forwardedBy?.name ?? null,
     sent_at: new Date(m.date * 1000).toISOString(),
     edited_at: edited && m.edit_date ? new Date(m.edit_date * 1000).toISOString() : null,
     kind,
@@ -148,6 +170,12 @@ async function saveGroupMessage(m: TgMessage, edited: boolean): Promise<number |
   if (approved && analysable && owner !== null && m.from && m.from.id !== owner) {
     await supabase.from("app_config")
       .update({ boss_tg_id: m.from.id, boss_name: displayName(m.from) })
+      .eq("id", 1).is("boss_tg_id", null);
+  }
+  // A forwarded message from a known account also tells us who the boss is, even if they never write here.
+  if (approved && forwardedBy && senderId !== null) {
+    await supabase.from("app_config")
+      .update({ boss_tg_id: senderId, boss_name: senderName })
       .eq("id", 1).is("boss_tg_id", null);
   }
   return status === "pending" ? m.chat.id : null;

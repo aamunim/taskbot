@@ -1,5 +1,6 @@
 import { analyse, IMAGE_MEDIA_TYPES, type Operation } from "./claude.ts";
 import { transcribe } from "./elevenlabs.ts";
+import { fetchLinkMeta } from "./linkmeta.ts";
 import { downloadFile, MAX_DOWNLOAD_BYTES, sendMessage } from "./telegram.ts";
 import { db, errorText, escapeHtml, localStamp, recordError } from "./util.ts";
 
@@ -22,6 +23,8 @@ interface MessageRow {
   text: string | null;
   transcript: string | null;
   reply_to_tg_message_id: number | null;
+  forwarded_by_tg_id: number | null;
+  forwarded_by_name: string | null;
   attempts: number;
 }
 interface FileRow {
@@ -67,7 +70,19 @@ export async function processAll(): Promise<{ chats: number; messages: number }>
   let messages = 0;
   const chats = (data ?? []) as number[];
   for (const chatId of chats) messages += await processChat(chatId);
+  await fillLinkPreviews().catch((e) => console.error("link previews failed", e));
   return { chats: chats.length, messages };
+}
+
+/** Looks up title, description, image and icon for a few saved links per run. */
+async function fillLinkPreviews(): Promise<void> {
+  const supabase = db();
+  const { data } = await supabase.from("links").select("id,url").eq("meta_status", "pending")
+    .order("created_at", { ascending: false }).limit(5);
+  await Promise.all((data ?? []).map(async (l) => {
+    const meta = await fetchLinkMeta(l.url as string);
+    await supabase.from("links").update(meta ? { ...meta, meta_status: "done" } : { meta_status: "failed" }).eq("id", l.id);
+  }));
 }
 
 /** Claims and processes one chat's waiting messages. Returns how many were handled. */
@@ -174,6 +189,7 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
         localStamp(new Date(m.sent_at), timeZone),
         who(m),
         m.edited_at ? "EDITED" : null,
+        m.forwarded_by_tg_id !== null ? "forwarded by the owner" : null,
         m.reply_to_tg_message_id
           ? `reply to ${tgIdToRef.get(m.reply_to_tg_message_id) ?? `#${m.reply_to_tg_message_id}`}`
           : null,
@@ -241,6 +257,10 @@ async function runBatch(chatId: number, batch: MessageRow[]): Promise<void> {
       await supabase.from("item_events").insert({
         item_id: itemId, actor: "ai", message_id: source.id, summary: "Created from a message",
       });
+      const steps = row.type === "task" ? (op.subtasks ?? []).map((s) => s.trim()).filter(Boolean).slice(0, 8) : [];
+      if (steps.length) {
+        await supabase.from("subtasks").insert(steps.map((title, position) => ({ item_id: itemId, title: title.slice(0, 200), position })));
+      }
       created.push({ title: row.title, type: row.type, due: row.due_at, review });
     }
 
@@ -325,9 +345,9 @@ async function handleFile(message: MessageRow, f: FileRow, images: Map<string, I
 
   if (needsTranscript) {
     // A failure here throws, so the batch is retried rather than analysed without the voice content.
-    const transcript = await transcribe(bytes, f.file_name ?? "audio.ogg", f.mime_type ?? "audio/ogg");
+    const { text: transcript, words } = await transcribe(bytes, f.file_name ?? "audio.ogg", f.mime_type ?? "audio/ogg");
     message.transcript = transcript;
-    await supabase.from("messages").update({ transcript }).eq("id", message.id);
+    await supabase.from("messages").update({ transcript, transcript_words: words.length ? words : null }).eq("id", message.id);
   }
 
   const mediaType = f.kind === "photo" ? "image/jpeg" : f.mime_type ?? "";

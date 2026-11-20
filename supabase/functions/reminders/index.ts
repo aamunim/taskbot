@@ -2,6 +2,7 @@ import { messageLink, sendMessage } from "../_shared/telegram.ts";
 import { db, escapeHtml, isAdmin, json, localDate, localStamp, localTime, recordError } from "../_shared/util.ts";
 
 interface Task {
+  waiting_since: string | null;
   id: string;
   title: string;
   due_at: string | null;
@@ -41,7 +42,7 @@ async function run(): Promise<Record<string, number>> {
   let sent = 0;
 
   const { data, error } = await supabase.from("items")
-    .select("id,title,due_at,due_all_day,priority,status")
+    .select("id,title,due_at,due_all_day,priority,status,waiting_since")
     .eq("type", "task").eq("dismissed", false).neq("status", "done")
     .order("due_at", { ascending: true, nullsFirst: false }).limit(200);
   if (error) throw error;
@@ -54,6 +55,15 @@ async function run(): Promise<Record<string, number>> {
   // Deadline approaching / just passed.
   const soon = now.getTime() + cfg.remind_before_minutes * 60_000;
   for (const t of tasks) {
+    if (t.status === "waiting") {
+      // Delivered but no reply from the boss for two days: worth a nudge.
+      const since = t.waiting_since ? new Date(t.waiting_since).getTime() : now.getTime();
+      if (now.getTime() - since >= 2 * 86400_000 && await firstTime(`waiting:${t.id}:${t.waiting_since}`)) {
+        await sendMessage(owner, `⏳ <b>Still waiting on your boss</b>\n${escapeHtml(t.title)}\nNo reply for 2 days. You may want to follow up.`);
+        sent++;
+      }
+      continue;
+    }
     if (!t.due_at) continue;
     const due = new Date(t.due_at).getTime();
     if (due > now.getTime() && due <= soon) {
@@ -74,8 +84,9 @@ async function run(): Promise<Record<string, number>> {
   const minutes = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3, 5));
   const sinceMorning = minutes(localTime(now, tz)) - minutes(String(cfg.morning_time));
   if (cfg.digest_enabled && sinceMorning >= 0 && sinceMorning < 120 && await firstTime(`digest:${today}`)) {
-    const overdue = tasks.filter((t) => t.due_at && new Date(t.due_at) < now);
-    const dueToday = tasks.filter((t) => t.due_at && new Date(t.due_at) >= now && localDate(new Date(t.due_at), tz) === today);
+    const active = tasks.filter((t) => t.status !== "waiting");
+    const overdue = active.filter((t) => t.due_at && new Date(t.due_at) < now);
+    const dueToday = active.filter((t) => t.due_at && new Date(t.due_at) >= now && localDate(new Date(t.due_at), tz) === today);
     const { count: inbox } = await supabase.from("items")
       .select("id", { count: "exact", head: true }).eq("needs_review", true).eq("dismissed", false);
     const list = (ts: Task[]) => ts.slice(0, 15).map((t) => `• ${escapeHtml(t.title)} (${fmtDue(t)})`).join("\n");

@@ -56,6 +56,7 @@ export interface TgMessage {
   entities?: TgEntity[];
   caption_entities?: TgEntity[];
   reply_to_message?: { message_id: number };
+  forward_origin?: { type: string; sender_user?: TgUser; sender_user_name?: string; sender_chat?: TgChat; chat?: TgChat };
   migrate_from_chat_id?: number;
   voice?: TgFileBase;
   audio?: TgFileBase;
@@ -141,4 +142,14 @@ export function extractLinks(m: TgMessage): { url: string; domain: string | null
   }
   for (const match of text.matchAll(/https?:\/\/[^\s<>"]+/g)) urls.add(match[0]);
   return [...urls].filter((u) => /^https?:\/\//i.test(u)).map((url) => ({ url, domain: domainOf(url) }));
+}
+
+/** Who originally wrote a forwarded message. `id` is null when their privacy settings hide it. */
+export function forwardOrigin(m: TgMessage): { id: number | null; name: string } | null {
+  const o = m.forward_origin;
+  if (!o) return null;
+  if (o.type === "user" && o.sender_user) return { id: o.sender_user.id, name: displayName(o.sender_user) };
+  if (o.type === "hidden_user" && o.sender_user_name) return { id: null, name: o.sender_user_name };
+  const chat = o.sender_chat ?? o.chat;
+  return chat ? { id: null, name: chat.title ?? "Channel" } : null;
 }
