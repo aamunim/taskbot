@@ -1,6 +1,6 @@
 import { handleButton } from "../_shared/actions.ts";
 import { answerQuestion } from "../_shared/ask.ts";
-import { processChat } from "../_shared/pipeline.ts";
+import { aiOutage, processChat } from "../_shared/pipeline.ts";
 import { todayOverview } from "../_shared/overview.ts";
 import {
   answerCallback, displayName, extractFiles, extractLinks, forwardOrigin, messageKind, messageSender, sendMessage, tg, type TgMessage, type TgUpdate,
@@ -224,7 +224,13 @@ async function handlePrivate(m: TgMessage): Promise<void> {
         await tg("sendMessage", { chat_id: m.chat.id, text: (await answerQuestion(text)).slice(0, 4000) });
       } catch (e) {
         await recordError("ask", e);
-        await sendMessage(m.chat.id, "Sorry, I could not answer that just now. Please try again.").catch(() => {});
+        const reason = aiOutage(e)?.reason;
+        await sendMessage(
+          m.chat.id,
+          reason === "credit" ? "I cannot answer right now: the Claude API credit has run out. Add credit in the Claude Console and ask again."
+            : reason === "key" ? "I cannot answer right now: the Claude API key is not being accepted."
+            : "Sorry, I could not answer that just now. Please try again.",
+        ).catch(() => {});
       }
     })());
     return;

@@ -109,6 +109,21 @@ export async function processChat(chatId: number): Promise<number> {
     await supabase.from("app_config").update({ last_processed_at: new Date().toISOString() }).eq("id", 1);
   } catch (e) {
     await recordError("process", e);
+    const outage = aiOutage(e);
+    if (outage) {
+      // The AI service cannot be used right now (no credit, wrong key, overloaded).
+      // Trying again at once would fail the same way, so the messages wait, uncounted,
+      // and the whole chat is retried later. Nothing is lost and nothing is marked failed.
+      const later = new Date(Date.now() + outage.waitMinutes * 60_000).toISOString();
+      for (const m of batch) {
+        await supabase.from("messages").update({
+          process_status: "pending", attempts: Math.max(0, m.attempts - 1), queued_at: later,
+          error: errorText(e).slice(0, 1000),
+        }).eq("id", m.id);
+      }
+      await tellOwnerOnce(outage);
+      return batch.length;
+    }
     // Back to the queue; the cron run retries until MAX_ATTEMPTS, then it stays visible as failed.
     for (const m of batch) {
       await supabase.from("messages").update({
@@ -329,6 +344,39 @@ async function runBatch(chatId: number, claimed: MessageRow[]): Promise<void> {
     });
     await sendMessage(ownerTgId, `<b>Newly added</b>\n${lines.join("\n")}`)
       .catch((e) => console.error("notify failed", e));
+  }
+}
+
+interface Outage { reason: "credit" | "key" | "busy"; waitMinutes: number }
+
+/** Recognises failures that come from the AI account or service rather than from these messages. */
+export function aiOutage(e: unknown): Outage | null {
+  const status = typeof (e as { status?: unknown })?.status === "number" ? (e as { status: number }).status : null;
+  const text = errorText(e).toLowerCase();
+  if (text.includes("credit balance") || text.includes("billing") || status === 402) return { reason: "credit", waitMinutes: 15 };
+  if (status === 401 || status === 403) return { reason: "key", waitMinutes: 15 };
+  if (status === 429 || status === 529 || (status !== null && status >= 500)) return { reason: "busy", waitMinutes: 3 };
+  return null;
+}
+
+/** One private message a day about an account problem, so the owner knows why tasks stopped appearing. */
+async function tellOwnerOnce(outage: Outage): Promise<void> {
+  if (outage.reason === "busy") return;
+  try {
+    const supabase = db();
+    const { data: cfg } = await supabase.from("app_config").select("owner_tg_id,timezone").eq("id", 1).single();
+    if (!cfg?.owner_tg_id) return;
+    const day = localStamp(new Date(), cfg.timezone ?? "Asia/Dhaka").slice(0, 10);
+    const { error } = await supabase.from("notifications_sent").insert({ key: `ai-${outage.reason}:${day}` });
+    if (error) return; // already told today
+    await sendMessage(
+      cfg.owner_tg_id,
+      outage.reason === "credit"
+        ? "⚠️ <b>Your Claude API credit has run out</b>\nNew messages are still being saved, but they cannot be turned into tasks until you add credit in the Claude Console. Once you do, the waiting messages are analysed automatically within about 15 minutes."
+        : "⚠️ <b>The Claude API key is not being accepted</b>\nNew messages are still being saved, but they cannot be analysed. Check the ANTHROPIC_API_KEY secret and run “Deploy backend” again.",
+    );
+  } catch (e) {
+    console.error("could not tell the owner about the AI outage", e);
   }
 }
 
