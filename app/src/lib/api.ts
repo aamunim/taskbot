@@ -17,7 +17,7 @@ const MESSAGE_COLUMNS =
   'id,chat_id,tg_message_id,sender_tg_id,sender_name,sent_at,edited_at,kind,text,transcript,transcript_words,forwarded_by_tg_id,forwarded_by_name';
 const CONFIG_COLUMNS =
   'owner_tg_id,boss_tg_id,boss_name,timezone,morning_time,remind_before_minutes,digest_enabled,' +
-  'notify_new_items,notify_boss_done,notify_boss_waiting,boss_done_message,boss_waiting_message,clarify_enabled,read_silent_photos,followup_mode,followup_days,followup_message,' +
+  'notify_new_items,notify_boss_done,notify_boss_waiting,boss_done_message,boss_waiting_message,clarify_enabled,economy_mode,read_silent_photos,followup_mode,followup_days,followup_message,' +
   'weekly_report_enabled,weekly_report_day,weekly_report_time,last_webhook_at,last_processed_at,last_error,last_error_at';
 
 type Derived = 'has_files' | 'steps_total' | 'steps_done';
@@ -371,4 +371,21 @@ export async function fetchShared(token: string): Promise<{ data: SharedLibrary 
   } catch {
     return { data: null, error: 'failed' };
   }
+}
+
+// ---------------------------------------------------------------- AI spending
+
+export type UsagePeriod = { period: 'today' | 'last_7_days' | 'this_month'; calls: number; cost_usd: number; input_tokens: number; output_tokens: number };
+
+/** What the bot's AI calls cost today, over the last 7 days and this month. */
+export async function fetchAiUsage(): Promise<UsagePeriod[]> {
+  if (DEMO) {
+    return [
+      { period: 'today', calls: 14, cost_usd: 0.31, input_tokens: 61000, output_tokens: 9800 },
+      { period: 'last_7_days', calls: 96, cost_usd: 2.18, input_tokens: 420000, output_tokens: 64000 },
+      { period: 'this_month', calls: 212, cost_usd: 4.75, input_tokens: 930000, output_tokens: 141000 },
+    ];
+  }
+  const { data } = await supabase.rpc('ai_usage_summary');
+  return ((data ?? []) as UsagePeriod[]).map((r) => ({ ...r, calls: Number(r.calls), cost_usd: Number(r.cost_usd), input_tokens: Number(r.input_tokens), output_tokens: Number(r.output_tokens) }));
 }

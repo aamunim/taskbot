@@ -1,4 +1,4 @@
-import { analyse, IMAGE_MEDIA_TYPES, type Operation } from "./claude.ts";
+import { analyse, IMAGE_MEDIA_TYPES, type Operation, worthAnalysing } from "./claude.ts";
 import { transcribe } from "./elevenlabs.ts";
 import { proposeDraft } from "./drafts.ts";
 import { fetchLinkMeta } from "./linkmeta.ts";
@@ -6,8 +6,10 @@ import { flushBossNotices } from "./notices.ts";
 import { downloadFile, MAX_DOWNLOAD_BYTES, sendMessage } from "./telegram.ts";
 import { db, errorText, escapeHtml, localStamp, recordError } from "./util.ts";
 
-const QUIET_SECONDS = 10;
-const MAX_ATTEMPTS = 5;
+// Longer quiet time means a run of messages is analysed in one call instead of several.
+const QUIET_SECONDS = 25;
+// Every retry is another paid AI call, so give up sooner and tell the owner instead.
+const MAX_ATTEMPTS = 3;
 const REVIEW_BELOW = 0.7;
 /** Images larger than this are stored but not shown to the model. */
 const MAX_IMAGE_BYTES = 3_500_000;
@@ -163,12 +165,13 @@ async function runBatch(chatId: number, claimed: MessageRow[]): Promise<void> {
 
   const { data: linked } = await supabase.from("item_messages").select("item_id, message_id").in("message_id", ids);
   const linkedIds = [...new Set((linked ?? []).map((l) => l.item_id as string))];
-  const since = new Date(Date.now() - 14 * 86400_000).toISOString();
+  // Open tasks are always sent; finished ones and notes only while they are recent.
+  const since = new Date(Date.now() - 5 * 86400_000).toISOString();
   const { data: recentItems, error: itemsErr } = await supabase.from("items")
     .select("id,type,title,details,status,priority,due_at,due_text,tags")
     .eq("dismissed", false)
     .or(`and(type.eq.task,status.neq.done),updated_at.gte.${since}`)
-    .order("updated_at", { ascending: false }).limit(60);
+    .order("updated_at", { ascending: false }).limit(50);
   if (itemsErr) throw itemsErr;
   const items = [...((recentItems ?? []) as ItemRow[])];
   const missing = linkedIds.filter((id) => !items.some((i) => i.id === id));
@@ -184,12 +187,29 @@ async function runBatch(chatId: number, claimed: MessageRow[]): Promise<void> {
     .select("tg_message_id,sender_tg_id,sender_name,sent_at,text,transcript,kind")
     .eq("chat_id", chatId).lt("tg_message_id", batch[0].tg_message_id)
     .not("id", "in", `(${ids.join(",")})`)
-    .order("tg_message_id", { ascending: false }).limit(15);
+    .order("tg_message_id", { ascending: false }).limit(10);
 
   const who = (m: { sender_tg_id: number | null; sender_name: string | null }) =>
     `${m.sender_name ?? "Unknown"}${roleLabel(m.sender_tg_id, ownerTgId, bossTgId)}`;
   const body = (m: { text: string | null; transcript: string | null; kind: string }) =>
     [m.text, m.transcript ? `(voice transcript) ${m.transcript}` : null].filter(Boolean).join(" ") || `(${m.kind})`;
+
+  // Saving money without losing anything: a batch that is only acknowledgements
+  // ("ok", "thanks", a thumbs-up) has nothing to extract. From the owner it never
+  // changes a task; from anyone else it could be the boss accepting delivered work,
+  // so it is skipped only when no task is waiting on the boss.
+  const plain = (m: MessageRow) => !(filesByMessage.get(m.id)?.length) && !m.transcript && isAcknowledgement(m.text);
+  const anyWaiting = items.some((it) => it.type === "task" && it.status === "waiting");
+  if (batch.every((m) => plain(m) && (m.sender_tg_id === ownerTgId || !anyWaiting))) return;
+
+  // Economy mode: a cheap model first checks whether text-only messages are plainly small talk.
+  if (cfg?.economy_mode && !images.size) {
+    const relevant = await worthAnalysing(
+      batch.map((m) => `${who(m)}: ${clip(body(m), 600)}`),
+      items.filter((it) => it.type === "task" && it.status !== "done").slice(0, 40).map((it) => it.title),
+    );
+    if (!relevant) return;
+  }
 
   const messageByRef = new Map(batch.map((m, i) => [`m${i + 1}`, m]));
   const tgIdToRef = new Map(batch.map((m, i) => [m.tg_message_id, `m${i + 1}`]));
@@ -201,7 +221,7 @@ async function runBatch(chatId: number, claimed: MessageRow[]): Promise<void> {
     items: items.map((it) => ({
       ref: itemRef.get(it.id)!,
       summary: {
-        type: it.type, title: it.title, details: it.details, status: it.status, priority: it.priority,
+        type: it.type, title: it.title, details: clip(it.details, 240), status: it.status, priority: it.priority,
         due: it.due_at ? localStamp(new Date(it.due_at), timeZone) : null, tags: it.tags,
       },
     })),
@@ -310,6 +330,23 @@ async function runBatch(chatId: number, claimed: MessageRow[]): Promise<void> {
     await sendMessage(ownerTgId, `<b>Newly added</b>\n${lines.join("\n")}`)
       .catch((e) => console.error("notify failed", e));
   }
+}
+
+const clip = (s: string | null, max: number) => (s && s.length > max ? `${s.slice(0, max)}…` : s);
+
+const ACK_WORDS = new Set([
+  "ok", "okay", "okey", "k", "kk", "oki", "hmm", "hm", "hmmm", "yes", "yep", "ya", "ji", "jee", "g", "accha", "acha", "achha", "thik", "ase", "ache",
+  "thanks", "thank", "you", "thankyou", "thx", "ty", "tnx", "welcome", "sir", "boss", "vai", "bhai", "bhaiya", "apu", "madam", "mam",
+  "hi", "hello", "hey", "salam", "assalamualaikum", "walaikumassalam", "good", "morning", "evening", "night", "noted", "sure", "fine", "great", "nice",
+  "জি", "জ্বি", "জী", "হ্যাঁ", "হুম", "আচ্ছা", "ঠিক", "আছে", "ওকে", "ধন্যবাদ", "স্যার", "ভাই", "আপু", "ম্যাডাম", "সালাম", "আসসালামু", "আলাইকুম", "শুভ", "সকাল", "রাত্রি", "সন্ধ্যা",
+]);
+
+/** True for a short message made only of greeting / thanks / agreement words and emoji. */
+export function isAcknowledgement(text: string | null): boolean {
+  const t = (text ?? "").trim();
+  if (!t || t.length > 40) return false;
+  const words = t.toLowerCase().split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
+  return words.every((w) => ACK_WORDS.has(w));
 }
 
 /** Tells the model who is speaking. With no boss chosen yet, everyone else counts as the boss. */

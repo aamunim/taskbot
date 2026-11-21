@@ -141,6 +141,7 @@ export type AppConfig = {
   boss_done_message: string;
   boss_waiting_message: string;
   clarify_enabled: boolean;
+  economy_mode: boolean;
   read_silent_photos: boolean;
   followup_mode: 'off' | 'ask' | 'auto';
   followup_days: number;

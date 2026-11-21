@@ -87,6 +87,7 @@ const config: AppConfig = {
   boss_done_message: '✅ Done: {task}',
   boss_waiting_message: '📨 Sent for your review: {task}',
   clarify_enabled: true,
+  economy_mode: false,
   read_silent_photos: false,
   followup_mode: 'ask',
   followup_days: 2,

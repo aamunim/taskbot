@@ -216,6 +216,33 @@ export default function SettingsScreen() {
           )}
         </Card>
   );
+  const [usage, setUsage] = useState<api.UsagePeriod[]>([]);
+  useFocusEffect(
+    useCallback(() => {
+      api.fetchAiUsage().then(setUsage);
+    }, []),
+  );
+  const USAGE_LABEL = { today: 'Today', last_7_days: 'Last 7 days', this_month: 'This month' } as const;
+  const aiUsage = (
+        <Card style={{ gap: space.lg }}>
+          <Txt variant="caption" sub>What the bot's AI calls cost, counted by the bot itself from the day this was added. Voice transcription is billed separately by ElevenLabs.</Txt>
+          <View style={{ flexDirection: 'row', gap: space.sm }}>
+            {(['today', 'last_7_days', 'this_month'] as const).map((key) => {
+              const u = usage.find((x) => x.period === key);
+              return (
+                <View key={key} style={{ flex: 1, padding: space.md, borderRadius: radius.md, backgroundColor: t.surfaceAlt, gap: 2 }}>
+                  <Txt variant="caption" sub>{USAGE_LABEL[key]}</Txt>
+                  <Txt variant="heading">{u ? `$${u.cost_usd.toFixed(2)}` : '…'}</Txt>
+                  <Txt variant="caption" sub>{u ? plural(u.calls, 'call') : ' '}</Txt>
+                </View>
+              );
+            })}
+          </View>
+          <Row label="Economy mode" hint="A small, cheap model first checks whether new messages are only small talk, and the main model is called only when they are not. Saves most in a chatty group. It is told to pass anything doubtful along, but a wrongly skipped message would not become a task.">
+            <Toggle label="Economy mode" value={cfg.economy_mode} onChange={(v) => void saveConfig({ economy_mode: v })} />
+          </Row>
+        </Card>
+  );
   const pickReportTime = () => {
     if (!cfg) return;
     const [h, m] = cfg.weekly_report_time.split(':').map(Number);
@@ -377,6 +404,8 @@ export default function SettingsScreen() {
               {automation}
               <SectionHeader title="Page for your boss" />
               {bossPage}
+              <SectionHeader title="AI usage" />
+              {aiUsage}
               <SectionHeader title="Reminders" />
               {reminders}
             </View>
@@ -416,6 +445,8 @@ export default function SettingsScreen() {
         {automation}
         <SectionHeader title="Page for your boss" />
         {bossPage}
+        <SectionHeader title="AI usage" />
+        {aiUsage}
         <SectionHeader title="Appearance" />
         {appearanceCard}
         <SectionHeader title="Reminders" />

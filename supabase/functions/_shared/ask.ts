@@ -1,4 +1,5 @@
 import Anthropic from "npm:@anthropic-ai/sdk@^1.10.0";
+import { recordUsage } from "./usage.ts";
 import { db, env, localStamp, optionalEnv } from "./util.ts";
 
 const SYSTEM = `You answer questions from the owner of a work tracker, in a private Telegram chat. The tracker holds tasks and notes extracted from a group where the owner's boss gives instructions, plus the recent messages of that group.
@@ -18,10 +19,10 @@ export async function answerQuestion(question: string): Promise<string> {
 
   const { data: items } = await supabase.from("items")
     .select("type,title,details,status,priority,due_at,tags,source_sender_tg_id,created_at,completed_at,waiting_since")
-    .eq("dismissed", false).order("updated_at", { ascending: false }).limit(150);
+    .eq("dismissed", false).order("updated_at", { ascending: false }).limit(100);
   const { data: messages } = await supabase.from("messages")
     .select("sender_tg_id,sender_name,sent_at,text,transcript,kind")
-    .neq("kind", "service").order("sent_at", { ascending: false }).limit(80);
+    .neq("kind", "service").order("sent_at", { ascending: false }).limit(50);
 
   const itemLines = (items ?? []).map((i) => JSON.stringify({
     type: i.type, title: i.title, details: i.details ? String(i.details).slice(0, 300) : undefined,
@@ -35,7 +36,8 @@ export async function answerQuestion(question: string): Promise<string> {
 
   const client = new Anthropic({ apiKey: env("ANTHROPIC_API_KEY") });
   const response = await client.beta.messages.create({
-    model: optionalEnv("CLAUDE_MODEL") ?? "claude-opus-5-5",
+    // Answering from a list is simpler than extracting tasks, so it can use a cheaper model.
+    model: optionalEnv("CLAUDE_ASK_MODEL") ?? optionalEnv("CLAUDE_MODEL") ?? "claude-opus-5-5",
     max_tokens: 4000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
@@ -56,6 +58,7 @@ export async function answerQuestion(question: string): Promise<string> {
     }],
     output_config: { effort: "low" },
   });
+  await recordUsage("ask", response.model, response.usage);
   if (response.stop_reason === "refusal") return "I could not answer that one.";
   const text = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("").trim();
   return text || "I could not find an answer.";

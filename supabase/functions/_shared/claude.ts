@@ -1,4 +1,5 @@
 import Anthropic from "npm:@anthropic-ai/sdk@^1.10.0";
+import { recordUsage } from "./usage.ts";
 import { env, optionalEnv } from "./util.ts";
 
 export interface Operation {
@@ -150,10 +151,58 @@ export async function analyse(input: AnalysisInput): Promise<Operation[]> {
     output_config: { effort: "medium", format: { type: "json_schema", schema: OUTPUT_SCHEMA } },
   });
 
+  await recordUsage("analyse", response.model, response.usage);
   if (response.stop_reason === "refusal") throw new Error("Claude declined to analyse these messages");
   if (response.stop_reason === "max_tokens") throw new Error("Claude response was cut off");
   const text = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
   const parsed = JSON.parse(text) as { operations?: Operation[] };
   if (!Array.isArray(parsed.operations)) throw new Error("Claude returned no operations list");
   return parsed.operations;
+}
+
+const TRIAGE_PROMPT = `You screen new messages from a work chat between a boss and an employee before a more careful system reads them. Decide whether the new messages could matter to the employee's task tracker.
+
+Answer relevant = true if any new message could be, even partly or indirectly: an instruction, request, question that expects action, deadline, date, time, amount, decision, fact worth keeping, file or link being shared, a report that work was started, sent or finished, an acceptance or rejection of work, a change or cancellation, or anything that refers to one of the open tasks listed. Voice transcripts may be garbled; if a message is unclear, answer true.
+
+Answer relevant = false only when every new message is plainly small talk: greetings, thanks, acknowledgements, jokes, emoji, or chatter with no bearing on work.
+
+Missing something real is far worse than passing along something trivial. When in doubt, answer true.`;
+
+/**
+ * Cheap first look (economy mode): false only when the new messages are plainly
+ * small talk. Any error, refusal or doubt counts as true, so nothing is skipped by accident.
+ */
+export async function worthAnalysing(messages: string[], openTaskTitles: string[]): Promise<boolean> {
+  try {
+    const client = new Anthropic({ apiKey: env("ANTHROPIC_API_KEY") });
+    const response = await client.messages.create({
+      model: "claude-haiku-5-5",
+      max_tokens: 1000,
+      system: TRIAGE_PROMPT,
+      messages: [{
+        role: "user",
+        content: [
+          "Open tasks:",
+          openTaskTitles.length ? openTaskTitles.map((t) => `- ${t}`).join("\n") : "(none)",
+          "",
+          "New messages:",
+          messages.join("\n"),
+        ].join("\n"),
+      }],
+      output_config: {
+        effort: "low",
+        format: {
+          type: "json_schema",
+          schema: { type: "object", additionalProperties: false, required: ["relevant"], properties: { relevant: { type: "boolean" } } },
+        },
+      },
+    });
+    await recordUsage("triage", response.model, response.usage);
+    if (response.stop_reason !== "end_turn") return true;
+    const text = response.content.flatMap((b) => (b.type === "text" ? [b.text] : [])).join("");
+    return (JSON.parse(text) as { relevant?: unknown }).relevant !== false;
+  } catch (e) {
+    console.error("triage failed, analysing anyway", e);
+    return true;
+  }
 }

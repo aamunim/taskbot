@@ -16,6 +16,9 @@ jobs:
       ELEVENLABS_API_KEY: ${{ secrets.ELEVENLABS_API_KEY }}
       ADMIN_SECRET: ${{ secrets.ADMIN_SECRET }}
       OWNER_TELEGRAM_ID: ${{ secrets.OWNER_TELEGRAM_ID }}
+      # Optional: which Claude models to use (defaults are in the code).
+      CLAUDE_MODEL: ${{ secrets.CLAUDE_MODEL }}
+      CLAUDE_ASK_MODEL: ${{ secrets.CLAUDE_ASK_MODEL }}
     steps:
       - uses: actions/checkout@v4
 
@@ -44,6 +47,12 @@ jobs:
             ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
             ELEVENLABS_API_KEY="$ELEVENLABS_API_KEY" \
             ADMIN_SECRET="$ADMIN_SECRET"
+          if [ -n "$CLAUDE_MODEL" ]; then
+            supabase secrets set --yes --project-ref "$PROJECT_REF" CLAUDE_MODEL="$CLAUDE_MODEL"
+          fi
+          if [ -n "$CLAUDE_ASK_MODEL" ]; then
+            supabase secrets set --yes --project-ref "$PROJECT_REF" CLAUDE_ASK_MODEL="$CLAUDE_ASK_MODEL"
+          fi
           if [ -n "$OWNER_TELEGRAM_ID" ]; then
             supabase secrets set --yes --project-ref "$PROJECT_REF" OWNER_TELEGRAM_ID="$OWNER_TELEGRAM_ID"
           fi

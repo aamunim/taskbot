@@ -8,7 +8,7 @@ import {
 import { db, json, optionalEnv, recordError, timingSafeEqual, webhookSecret } from "../_shared/util.ts";
 
 /** Wait this long after a message before analysing, so follow-up messages join the same batch. */
-const BATCH_DELAY_MS = 12_000;
+const BATCH_DELAY_MS = 28_000;
 
 Deno.serve(async (req) => {
   const given = req.headers.get("x-telegram-bot-api-secret-token") ?? "";
